@@ -1,9 +1,10 @@
 #include <stdio.h>
 #include <cmath>
+#include <cfloat>
 
 struct Vec2 {
-  long double x;
-  long double y;
+  double x;
+  double y;
 };
 
 struct Vec2 sub(Vec2 a, Vec2 b) {
@@ -13,21 +14,25 @@ struct Vec2 sub(Vec2 a, Vec2 b) {
   };
 }
 
-long double dot(Vec2 a, Vec2 b) {
-  long double c = a.y * b.y;
-  return fma(a.x, b.x, c);
+double squared_len(Vec2 a) {
+  return a.x * a.x + a.y * a.y;
 }
 
-long double len(Vec2 a) {
-  return sqrt(dot(a, a));
+bool feq(double a, double b) {
+  return fabs(a - b) < (DBL_EPSILON * 1000.0 * a * b);
 }
 
-struct Vec2 normalize(Vec2 a) {
-  long double l = len(a);
-  return Vec2 {
-    a.x / l,
-    a.y / l
-  };
+bool is_right_triangle(Vec2 p1, Vec2 p2, Vec2 p3) {
+  Vec2 a = sub(p1, p2);
+  Vec2 b = sub(p2, p3);
+  Vec2 c = sub(p1, p3);
+
+  double a2 = squared_len(a);
+  double b2 = squared_len(b);
+  double c2 = squared_len(c);
+
+  // c^2 == a^2 + b^2
+  return feq(c2, a2 + b2);
 }
 
 int bad() {
@@ -41,7 +46,7 @@ int main() {
     printf("Bod #%d:\n", i + 1);
 
     int n = 0;
-    scanf(" ( %Lf , %Lf )%n", &points[i].x, &points[i].y, &n);
+    scanf(" ( %lf , %lf )%n", &points[i].x, &points[i].y, &n);
     
     if (
       n == 0
@@ -54,10 +59,10 @@ int main() {
     }
   }
 
-  char rem[2] = {};
-  scanf(" %1s", rem);
-  if (rem[0] != 0) {
-      return bad();
+  char c = 0;
+  scanf(" %c", &c);
+  if (c != 0) {
+    return bad();
   }
 
   for (int i = 0; i < 4; i++) {
@@ -65,11 +70,7 @@ int main() {
     Vec2 b = points[(i + 1) % 4];
     Vec2 c = points[(i + 2) % 4];
 
-    Vec2 v1 = normalize(sub(a, b));
-    Vec2 v2 = normalize(sub(b, c));
-    long double product = dot(v1, v2);
-
-    if (fabs(product) > 0.01) {
+    if (!is_right_triangle(a, b, c)) {
       printf("Body netvori obdelnik.\n");
       return 0;
     }
