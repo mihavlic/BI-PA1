@@ -57,7 +57,7 @@ void list_free(ArrayList *list) { free(list->allocation); }
 typedef struct {
   char c;
   ArrayList children;
-  int leaf_data;
+  ArrayList leaf_data;
 } TrieNode;
 
 void node_free(TrieNode *node) {
@@ -67,6 +67,7 @@ void node_free(TrieNode *node) {
     node_free(children + j);
   }
   list_free(&node->children);
+  list_free(&node->leaf_data);
 }
 
 TrieNode *find_child(TrieNode *node, char key) {
@@ -85,16 +86,11 @@ TrieNode *find_child(TrieNode *node, char key) {
 TrieNode *node_add_child(TrieNode *node) {
   int offset = node->children.size / sizeof(TrieNode);
   TrieNode empty = {};
-  empty.leaf_data = -1;
   list_push(&node->children, &empty, sizeof(TrieNode));
   return ((TrieNode *)node->children.allocation) + offset;
 }
 
 TrieNode *find_or_insert_child(TrieNode *node, char c) {
-  if (node->c == 0) {
-    node->c = c;
-    return node;
-  }
 
   TrieNode *child = find_child(node, c);
   if (child) {
@@ -119,31 +115,30 @@ TrieNode *node_insert(TrieNode *node, const char *key) {
   return current;
 }
 
-TrieNode *node_find(TrieNode *node, const char *key, bool *found) {
+TrieNode *node_find(TrieNode *node, const char *key) {
   assert(*key != 0);
-  *found = false;
 
   TrieNode *current = node;
   for (int i = 0;; i++) {
     char c = key[i];
     if (c == 0) {
-      break;
+      return current;
     }
     TrieNode *child = find_child(current, c);
     if (child) {
       current = child;
     } else {
-      return current;
+      return NULL;
     }
   }
 
-  *found = true;
-  return current;
+  return NULL;
 }
 
 const char *get_T9(char c) {
-  static const char *T9[9] = {" ",   "ABC",  "DEF", "GHI", "JKL",
-                              "MNO", "PQRS", "TUV", "WXYZ"};
+  static const char *T9[9] = {" ",        "abcABC", "defDEF",
+                              "ghiGHI",   "jklJKL", "mnoMNO",
+                              "pqrsPQRS", "tuvTUV", "wxyzWXYZ"};
   if (c < '1' || '9' < c) {
     return NULL;
   }
@@ -195,6 +190,23 @@ void exists() { printf("Kontakt jiz existuje.\n"); }
 
 void bad() { printf("Nespravny vstup.\n"); }
 
+bool leaf_add_data(TrieNode *node, ArrayList *contacts, const char *number,
+                   const char *name, int new_contact) {
+  int leaf_contacts_size = node->leaf_data.size / sizeof(int);
+  int *leaf_contacts = (int *)node->leaf_data.allocation;
+  Contact *contacts_ptr = (Contact *)contacts->allocation;
+  for (int i = 0; i < leaf_contacts_size; i++) {
+    Contact *contact = contacts_ptr + leaf_contacts[i];
+    if (strcmp(contact->number, number) == 0 &&
+        strcmp(contact->name, name) == 0) {
+      return true;
+    }
+  }
+
+  list_push(&node->leaf_data, &new_contact, sizeof(int));
+  return false;
+}
+
 void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
                 TrieNode *name_trie) {
   // + 123456 Vagner Ladislav
@@ -215,6 +227,13 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
     }
   }
   ptrdiff_t number_size = (ptrdiff_t)(line - number_start);
+  if (number_size < 1 || number_size > 20) {
+    return bad();
+  }
+
+  if (*line == ' ') {
+    return bad();
+  }
 
   char *name_start = line;
   while (true) {
@@ -228,6 +247,9 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
     }
   }
   ptrdiff_t name_size = (ptrdiff_t)(line - name_start);
+  if (name_size < 1) {
+    return bad();
+  }
 
   char *number = (char *)malloc(number_size);
   memcpy(number, number_start, number_size - 1);
@@ -242,19 +264,21 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
   list_push(contacts, &contact, sizeof(Contact));
 
   TrieNode *node = NULL;
-  // Contact *contacts_ptr = (Contact *)contacts->allocation;
   node = node_insert(number_trie, number);
-  node->leaf_data = new_contact;
+  if (leaf_add_data(node, contacts, number, name, new_contact))
+    return exists();
+
   node = node_insert(name_trie, name);
-  node->leaf_data = new_contact;
+  if (leaf_add_data(node, contacts, number, name, new_contact))
+    return exists();
 
   printf("OK\n");
 }
 
 void add_contact(TrieNode *node, void *data) {
   ArrayList *list = (ArrayList *)data;
-  if (node->c != 0 && node->leaf_data != -1) {
-    list_push(list, &node->leaf_data, sizeof(int));
+  if (node->c != 0 && node->leaf_data.size > 0) {
+    list_push(list, node->leaf_data.allocation, node->leaf_data.size);
   }
 }
 
@@ -309,11 +333,17 @@ void do_query(char *line, ArrayList *contacts, ArrayList *scratch,
   }
   *(line - 1) = 0;
 
-  bool bah = false;
-  TrieNode *found = node_find(number_trie, number_start, &bah);
+  ptrdiff_t number_size = line - number_start - 1;
+  if (number_size < 1 || number_size > 20) {
+    return bad();
+  }
+
+  TrieNode *found = node_find(number_trie, number_start);
 
   list_reset(scratch);
-  visit_children(found, add_contact, scratch);
+  if (found) {
+    visit_children(found, add_contact, scratch);
+  }
   visit_children_t9(name_trie, number_start, 0, add_contact, scratch);
 
   qsort(scratch->allocation, scratch->size / sizeof(int), sizeof(int),
@@ -321,10 +351,12 @@ void do_query(char *line, ArrayList *contacts, ArrayList *scratch,
   int scratch_size =
       int_dedup((int *)scratch->allocation, scratch->size / sizeof(int));
 
-  for (int i = 0; i < scratch_size; i++) {
-    int index = ((int *)scratch->allocation)[i];
-    Contact *contact = ((Contact *)contacts->allocation) + index;
-    printf("%s %s\n", contact->number, contact->name);
+  if (scratch_size <= 10) {
+    for (int i = 0; i < scratch_size; i++) {
+      int index = ((int *)scratch->allocation)[i];
+      Contact *contact = ((Contact *)contacts->allocation) + index;
+      printf("%s %s\n", contact->number, contact->name);
+    }
   }
 
   printf("Celkem: %d\n", scratch_size);
@@ -332,10 +364,7 @@ void do_query(char *line, ArrayList *contacts, ArrayList *scratch,
 
 void dispatch(char **line, size_t *line_len, ArrayList *contacts,
               ArrayList *scratch, TrieNode *number_trie, TrieNode *name_trie) {
-  while (true) {
-    if (getline(line, line_len, stdin) <= 0) {
-      return;
-    }
+  while (getline(line, line_len, stdin) > 0) {
     switch (**line) {
     case '+':
       add_number(*line, contacts, number_trie, name_trie);
@@ -347,8 +376,9 @@ void dispatch(char **line, size_t *line_len, ArrayList *contacts,
       DEBUG("EOF\n");
       return;
     default:
+      bad();
       DEBUGF("unexpected character '%c'\n", **line);
-      return;
+      break;
     }
   }
 }
