@@ -67,67 +67,65 @@ int rectangle_size(int x, int y, int size, int altitude[][MAP_MAX]) {
   int y_min_arr[MAP_MAX] = {};
   int y_max_arr[MAP_MAX] = {};
 
-  int x_min = find_x_bound(x, y, -1, 0, alt, altitude);
-  int x_max = find_x_bound(x, y, 1, 0, alt, altitude);
+  int x_min = find_x_bound(x, y, -1, size, alt, altitude);
+  int x_max = find_x_bound(x, y, 1, size, alt, altitude);
   for (int x_ = x_min; x_ <= x_max; x_++) {
     x_min_arr[x_] = find_y_bound(x_, y, -1, size, alt, altitude);
     x_max_arr[x_] = find_y_bound(x_, y, 1, size, alt, altitude);
   }
-  // make_convex(x_min_arr, x_max_arr, x_min, x_max, x);
+  make_convex(x_min_arr, x_max_arr, x_min, x_max, x);
 
-  // int y_min = x_min_arr[x];
-  // int y_max = x_max_arr[x];
-  int y_min = 0;
-  int y_max = size - 1;
+  int y_min = x_min_arr[x];
+  int y_max = x_max_arr[x];
   for (int y_ = y_min; y_ <= y_max; y_++) {
     y_min_arr[y_] = find_x_bound(x, y_, -1, size, alt, altitude);
     y_max_arr[y_] = find_x_bound(x, y_, 1, size, alt, altitude);
   }
-  // make_convex(y_min_arr, y_max_arr, y_min, y_max, y);
+  make_convex(y_min_arr, y_max_arr, y_min, y_max, y);
 
-  printf("\n");
-  printf("Raw\n");
-  for (int y_ = 0; y_ < size; y_++) {
-    for (int x_ = 0; x_ < size; x_++) {
-      if (x_ == x && y_ == y) {
-        printf(" x");
-      } else if (altitude[x_][y_] < alt) {
-        printf(" .");
-      } else {
-        printf(" *");
-      }
-    }
-    printf("\n");
-  }
-  printf("Convex\n");
-  for (int y_ = 0; y_ < size; y_++) {
-    for (int x_ = 0; x_ < size; x_++) {
-      if (x_ == x && y_ == y) {
-        printf(" x");
-      } else if (x_ >= x_min && x_ <= x_max && y_ >= y_min && y_ <= y_max &&
-                 x_ >= y_min_arr[y_] && x_ <= y_max_arr[y_] &&
-                 y_ >= x_min_arr[x_] && y_ <= x_max_arr[x_]) {
-        printf(" .");
-      } else {
-        printf(" *");
-      }
-    }
-    printf("\n");
-  }
-  printf("\n");
-  for (int y_ = 0; y_ < size; y_++) {
-    for (int x_ = 0; x_ < size; x_++) {
-      if (x_ == x) {
-        printf("%2d/%-2d", y_min_arr[y_], y_max_arr[y_]);
-      } else if (y_ == y) {
-        printf("%2d/%-2d", x_min_arr[x_], x_max_arr[x_]);
-      } else {
-        printf("     ");
-      }
-    }
-    printf("\n");
-  }
-  printf("\n");
+  // printf("\n");
+  // printf("Raw\n");
+  // for (int y_ = 0; y_ < size; y_++) {
+  //   for (int x_ = 0; x_ < size; x_++) {
+  //     if (x_ == x && y_ == y) {
+  //       printf(" x");
+  //     } else if (altitude[x_][y_] < alt) {
+  //       printf(" .");
+  //     } else {
+  //       printf(" *");
+  //     }
+  //   }
+  //   printf("\n");
+  // }
+  // printf("Convex\n");
+  // for (int y_ = 0; y_ < size; y_++) {
+  //   for (int x_ = 0; x_ < size; x_++) {
+  //     if (x_ == x && y_ == y) {
+  //       printf(" x");
+  //     } else if (x_ >= x_min && x_ <= x_max && y_ >= y_min && y_ <= y_max &&
+  //                x_ >= y_min_arr[y_] && x_ <= y_max_arr[y_] &&
+  //                y_ >= x_min_arr[x_] && y_ <= x_max_arr[x_]) {
+  //       printf(" .");
+  //     } else {
+  //       printf(" *");
+  //     }
+  //   }
+  //   printf("\n");
+  // }
+  // printf("\n");
+  // for (int y_ = 0; y_ < size; y_++) {
+  //   for (int x_ = 0; x_ < size; x_++) {
+  //     if (x_ == x) {
+  //       printf("%2d/%-2d", y_min_arr[y_], y_max_arr[y_]);
+  //     } else if (y_ == y) {
+  //       printf("%2d/%-2d", x_min_arr[x_], x_max_arr[x_]);
+  //     } else {
+  //       printf("     ");
+  //     }
+  //   }
+  //   printf("\n");
+  // }
+  // printf("\n");
 
   int area = 0;
   for (int i = x_min; i <= x; i++) {
