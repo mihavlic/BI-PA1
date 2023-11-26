@@ -21,7 +21,7 @@ typedef struct {
   int capacity;
 } ArrayList;
 
-void _list_reserve(ArrayList *list, int new_size) {
+void list_reserve(ArrayList *list, int new_size) {
   if (new_size > list->capacity) {
     // linear growth because we§re hitting the memory limit
     int new_capacity = list->capacity + 128;
@@ -39,7 +39,7 @@ void _list_reserve(ArrayList *list, int new_size) {
 
 void list_push(ArrayList *list, void *element, int size) {
   int new_size = list->size + size;
-  _list_reserve(list, new_size);
+  list_reserve(list, new_size);
   memcpy((char *)list->allocation + list->size, element, size);
   list->size = new_size;
 }
@@ -47,7 +47,7 @@ void list_push(ArrayList *list, void *element, int size) {
 // index is not a byte offset
 void list_insert(ArrayList *list, int index, void *element, int size) {
   int new_size = list->size + size;
-  _list_reserve(list, new_size);
+  list_reserve(list, new_size);
   int start_offset = index * size;
   char *start = (char *)list->allocation + start_offset;
   memmove(start + size, start, list->size - start_offset);
@@ -338,17 +338,6 @@ int last_in_day(int i, Review *reviews, int review_count) {
     }
   }
   return j - 1;
-}
-
-int compare_ints(const void *a, const void *b) {
-  int arg1 = *(const int *)a;
-  int arg2 = *(const int *)b;
-
-  if (arg1 < arg2)
-    return -1;
-  if (arg1 > arg2)
-    return 1;
-  return 0;
 }
 
 typedef struct {
