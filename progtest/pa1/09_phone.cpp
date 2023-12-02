@@ -125,34 +125,58 @@ typedef struct {
   ArrayList leaf_data;
 } TrieNode;
 
-void node_free(TrieNode *node) {
-  ArrayList stack = {};
-  list_push(&stack, &node, sizeof(TrieNode *));
+typedef struct {
+  ArrayList nodes;
+} Trie;
 
-  while (stack.size > 0) {
-    TrieNode *last = *((TrieNode **)list_peek(&stack, sizeof(TrieNode *)));
-    if (last->children.size == 0) {
-      list_free(&last->children);
-      list_free(&last->leaf_data);
-      list_pop(&stack, NULL, sizeof(TrieNode *));
-    } else {
-      TrieNode *pop =
-          (TrieNode *)unsafe_list_pop(&last->children, sizeof(TrieNode));
-      list_push(&stack, &pop, sizeof(TrieNode *));
-    }
+typedef int NodeHandle;
+constexpr NodeHandle TRIE_ROOT = 0;
+constexpr NodeHandle TRIE_NULL = -1;
+
+void trie_init(Trie *trie) {
+  *trie = {};
+  assert(trie->nodes.size == 0);
+  TrieNode empty = {};
+  list_push(&trie->nodes, &empty, sizeof(TrieNode));
+}
+
+void trie_free(Trie *trie) {
+  int node_count = trie->nodes.size / sizeof(TrieNode);
+  TrieNode *nodes = (TrieNode *)trie->nodes.allocation;
+
+  for (int i = 0; i < node_count; i++) {
+    TrieNode *node = nodes + i;
+    list_free(&node->children);
+    list_free(&node->leaf_data);
   }
-  list_free(&stack);
+  list_free(&trie->nodes);
+}
+
+NodeHandle trie_add(Trie *trie, char c) {
+  NodeHandle offset = trie->nodes.size / sizeof(TrieNode);
+  TrieNode empty = {};
+  empty.c = c;
+  list_push(&trie->nodes, &empty, sizeof(TrieNode));
+  return offset;
+}
+
+TrieNode *trie_get(Trie *trie, NodeHandle handle) {
+  // assert(handle >= 0 && handle < (trie->nodes.size / (int)sizeof(TrieNode)));
+  TrieNode *nodes = (TrieNode *)trie->nodes.allocation;
+  return nodes + handle;
 }
 
 // binary search an index to insert an element so that the array remains sorted
 // stolen from the rust standard library
 // https://doc.rust-lang.org/src/core/slice/mod.rs.html#2771-2773
-int get_insert_index(TrieNode *array, int size, bool *found, char x) {
+int get_insert_index(Trie *trie, NodeHandle *array, int size, bool *found,
+                     char x) {
   int left = 0;
   int right = size;
   while (left < right) {
     int mid = left + size / 2;
-    char c = array[mid].c;
+    TrieNode *node = trie_get(trie, array[mid]);
+    char c = node->c;
 
     if (c < x) {
       left = mid + 1;
@@ -169,70 +193,68 @@ int get_insert_index(TrieNode *array, int size, bool *found, char x) {
   return left;
 }
 
-TrieNode *find_child(TrieNode *node, char key) {
+NodeHandle find_child(Trie *trie, NodeHandle handle, char key) {
   assert(key != 0);
+  TrieNode *node = trie_get(trie, handle);
+
   if (!bitset_contains(node->set, key)) {
-    return NULL;
+    return TRIE_NULL;
   }
 
-  int children_count = node->children.size / sizeof(TrieNode);
-  TrieNode *children = (TrieNode *)node->children.allocation;
+  int children_count = node->children.size / sizeof(NodeHandle);
+  NodeHandle *children = (NodeHandle *)node->children.allocation;
 
   bool found = false;
-  int index = get_insert_index(children, children_count, &found, key);
+  int index = get_insert_index(trie, children, children_count, &found, key);
   assert(found);
   assert(index < children_count);
 
-  return children + index;
+  return children[index];
 }
 
-TrieNode *find_or_insert_child(TrieNode *node, char c) {
-  int children_count = node->children.size / sizeof(TrieNode);
-  TrieNode *children = (TrieNode *)node->children.allocation;
+NodeHandle find_or_insert_child(Trie *trie, NodeHandle handle, char c) {
+  TrieNode *node = trie_get(trie, handle);
+
+  int children_count = node->children.size / sizeof(NodeHandle);
+  NodeHandle *children = (NodeHandle *)node->children.allocation;
 
   bool found = false;
-  int index = get_insert_index(children, children_count, &found, c);
+  int index = get_insert_index(trie, children, children_count, &found, c);
 
   if (!found) {
-    TrieNode empty = {};
-    empty.c = c;
-    list_insert(&node->children, index, &empty, sizeof(TrieNode));
+    NodeHandle inserted = trie_add(trie, c);
+    node = trie_get(trie, handle);
+    list_insert(&node->children, index, &inserted, sizeof(NodeHandle));
 
     node->set = bitset_set(node->set, c);
-    children = (TrieNode *)node->children.allocation;
-    children_count = node->children.size / sizeof(TrieNode);
+    children = (NodeHandle *)node->children.allocation;
+    children_count = node->children.size / sizeof(NodeHandle);
   }
   assert(index < children_count);
-  return children + index;
+  return children[index];
 }
 
-TrieNode *node_insert(TrieNode *node, const char *key) {
+NodeHandle node_insert(Trie *trie, const char *key) {
   assert(*key != 0);
-  TrieNode *current = node;
+  NodeHandle current = TRIE_ROOT;
   for (int i = 0; key[i] != 0; i++) {
     char c = key[i];
-    current = find_or_insert_child(current, c);
+    current = find_or_insert_child(trie, current, c);
   }
   return current;
 }
 
-TrieNode *node_find(TrieNode *node, const char *key) {
+NodeHandle node_find(Trie *trie, const char *key) {
   assert(*key != 0);
-  TrieNode *current = node;
-  for (int i = 0;; i++) {
-    char c = key[i];
-    if (c == 0) {
-      return current;
-    }
-    TrieNode *child = find_child(current, c);
-    if (child) {
-      current = child;
-    } else {
-      return NULL;
+  NodeHandle current = TRIE_ROOT;
+  for (int i = 0; key[i] != 0; i++) {
+    current = find_child(trie, current, key[i]);
+    if (current == TRIE_NULL) {
+      return TRIE_NULL;
     }
   }
 
-  return NULL;
+  return current;
 }
 
 void encode_t9(char *string) {
@@ -247,29 +269,29 @@ void collect_leaf_data(TrieNode *node, ArrayList *collected) {
   }
 }
 
-void collect_children(TrieNode *node, ArrayList *stack, ArrayList *collected) {
+void collect_children(Trie *trie, NodeHandle node, ArrayList *stack,
+                      ArrayList *collected) {
   int start_size = stack->size;
-  list_push(stack, &node, sizeof(TrieNode *));
+  list_push(stack, &node, sizeof(NodeHandle));
 
   while (stack->size > start_size) {
-    TrieNode *pop;
-    list_pop(stack, &pop, sizeof(TrieNode *));
+    NodeHandle handle;
+    list_pop(stack, &handle, sizeof(NodeHandle));
+
     while (true) {
+      TrieNode *pop = trie_get(trie, handle);
       collect_leaf_data(pop, collected);
 
-      int children_count = pop->children.size / sizeof(TrieNode);
-      TrieNode *children = (TrieNode *)pop->children.allocation;
+      int children_count = pop->children.size / sizeof(NodeHandle);
+      NodeHandle *children = (NodeHandle *)pop->children.allocation;
 
       // avoid pushing and popping a single element
       if (children_count == 1) {
-        pop = children;
+        handle = children[0];
         continue;
       }
 
-      for (int i = 0; i < children_count; i++) {
-        TrieNode *child = children + i;
-        list_push(stack, &child, sizeof(TrieNode *));
-      }
+      list_push(stack, pop->children.allocation, pop->children.size);
       break;
     }
   }
@@ -283,8 +305,10 @@ typedef struct {
 void exists() { printf("Kontakt jiz existuje.\n"); }
 void bad() { printf("Nespravny vstup.\n"); }
 
-bool leaf_add_data(TrieNode *node, ArrayList *contacts, const char *number,
-                   const char *name, int new_contact) {
+bool leaf_add_data(Trie *trie, NodeHandle handle, ArrayList *contacts,
+                   const char *number, const char *name, int new_contact) {
+  TrieNode *node = trie_get(trie, handle);
+
   int leaf_contacts_size = node->leaf_data.size / sizeof(int);
   int *leaf_contacts = (int *)node->leaf_data.allocation;
   Contact *contacts_ptr = (Contact *)contacts->allocation;
@@ -300,8 +324,8 @@ bool leaf_add_data(TrieNode *node, ArrayList *contacts, const char *number,
   return false;
 }
 
-void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
-                TrieNode *t9_name_trie) {
+void add_number(char *line, ArrayList *contacts, Trie *number_trie,
+                Trie *t9_name_trie) {
   // + 123456 Vagner Ladislav
   if (*(line++) != '+')
     return bad();
@@ -358,14 +382,14 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
   int new_contact = contacts->size / sizeof(Contact);
   list_push(contacts, &contact, sizeof(Contact));
 
-  TrieNode *node = NULL;
+  NodeHandle node = TRIE_NULL;
   node = node_insert(number_trie, number);
-  if (leaf_add_data(node, contacts, number, name, new_contact))
+  if (leaf_add_data(number_trie, node, contacts, number, name, new_contact))
     return exists();
 
   encode_t9(name_start);
   node = node_insert(t9_name_trie, name_start);
-  if (leaf_add_data(node, contacts, number, name, new_contact))
+  if (leaf_add_data(t9_name_trie, node, contacts, number, name, new_contact))
     return exists();
 
   printf("OK\n");
@@ -402,8 +426,7 @@ int int_dedup(int *array, int size) {
 }
 
 void do_query(char *line, ArrayList *contacts, ArrayList *stack,
-              ArrayList *collected, TrieNode *number_trie,
-              TrieNode *t9_name_trie) {
+              ArrayList *collected, Trie *number_trie, Trie *t9_name_trie) {
   // ? 1234567
   if (*(line++) != '?')
     return bad();
@@ -431,15 +454,15 @@ void do_query(char *line, ArrayList *contacts, ArrayList *stack,
   list_reset(stack);
   list_reset(collected);
 
-  TrieNode *found = {};
+  NodeHandle found = TRIE_NULL;
   found = node_find(number_trie, number_start);
-  if (found) {
-    collect_children(found, stack, collected);
+  if (found != TRIE_NULL) {
+    collect_children(number_trie, found, stack, collected);
   }
 
   found = node_find(t9_name_trie, number_start);
-  if (found) {
-    collect_children(found, stack, collected);
+  if (found != TRIE_NULL) {
+    collect_children(t9_name_trie, found, stack, collected);
   }
 
   qsort(collected->allocation, collected->size / sizeof(int), sizeof(int),
@@ -464,8 +487,11 @@ int main() {
   ArrayList contacts = {};
   ArrayList stack = {};
   ArrayList collected = {};
-  TrieNode number_trie = {};
-  TrieNode t9_name_trie = {};
+  Trie number_trie = {};
+  Trie t9_name_trie = {};
+
+  trie_init(&number_trie);
+  trie_init(&t9_name_trie);
 
   char *line = NULL;
   size_t line_len = 0;
@@ -500,7 +526,7 @@ int main() {
   list_free(&contacts);
   list_free(&stack);
   list_free(&collected);
-  node_free(&number_trie);
-  node_free(&t9_name_trie);
+  trie_free(&number_trie);
+  trie_free(&t9_name_trie);
   return 0;
 }
