@@ -80,8 +80,35 @@ void list_insert(ArrayList *list, int index, void *element, int size) {
 void list_reset(ArrayList *list) { list->size = 0; }
 void list_free(ArrayList *list) { free(list->allocation); }
 
+// a bitset of characters, stores [a-z0-9 ]
+typedef uint64_t CharBitSet;
+
+static unsigned char CHAR_BIT_SET_LUT[256] = {};
+
+void populate_lut() {
+  unsigned char counter = 0;
+  for (char i = 'a'; i <= 'z'; i++) {
+    CHAR_BIT_SET_LUT[(int)i] = counter++;
+  }
+  for (char i = '0'; i <= '9'; i++) {
+    CHAR_BIT_SET_LUT[(int)i] = counter++;
+  }
+  CHAR_BIT_SET_LUT[(int)' '] = counter++;
+}
+
+bool bitset_contains(CharBitSet set, char c) {
+  unsigned char bit_index = CHAR_BIT_SET_LUT[(int)c];
+  return ((set >> (CharBitSet)bit_index) & 1) == 1;
+}
+
+CharBitSet bitset_set(CharBitSet set, char c) {
+  unsigned char bit_index = CHAR_BIT_SET_LUT[(int)c];
+  return set | ((CharBitSet)1 << bit_index);
+}
+
 typedef struct {
   char c;
+  CharBitSet set;
   ArrayList children;
   ArrayList leaf_data;
 } TrieNode;
@@ -105,35 +132,66 @@ void node_free(TrieNode *node) {
   list_free(&stack);
 }
 
+// binary search an index to insert an element so that the array remains sorted
+// stolen from the rust standard library
+// https://doc.rust-lang.org/src/core/slice/mod.rs.html#2771-2773
+int get_insert_index(TrieNode *array, int size, bool *found, char x) {
+  int left = 0;
+  int right = size;
+  while (left < right) {
+    int mid = left + size / 2;
+    char c = array[mid].c;
+
+    if (c < x) {
+      left = mid + 1;
+    } else if (c > x) {
+      right = mid;
+    } else {
+      *found = true;
+      return mid;
+    }
+
+    size = right - left;
+  }
+  *found = false;
+  return left;
+}
+
 TrieNode *find_child(TrieNode *node, char key) {
+  assert(key != 0);
+  if (!bitset_contains(node->set, key)) {
+    return NULL;
+  }
+
   int children_count = node->children.size / sizeof(TrieNode);
   TrieNode *children = (TrieNode *)node->children.allocation;
 
-  for (int j = 0; j < children_count; j++) {
-    TrieNode *child = children + j;
-    if (child->c == key) {
-      return child;
-    }
-  }
-  return NULL;
-}
+  bool found = false;
+  int index = get_insert_index(children, children_count, &found, key);
+  assert(found);
+  assert(index < children_count);
 
-TrieNode *node_add_child(TrieNode *node) {
-  int offset = node->children.size / sizeof(TrieNode);
-  TrieNode empty = {};
-  list_push(&node->children, &empty, sizeof(TrieNode));
-  return ((TrieNode *)node->children.allocation) + offset;
+  return children + index;
 }
 
 TrieNode *find_or_insert_child(TrieNode *node, char c) {
-  TrieNode *child = find_child(node, c);
-  if (child) {
-    return child;
-  } else {
-    TrieNode *added = node_add_child(node);
-    added->c = c;
-    return added;
+  int children_count = node->children.size / sizeof(TrieNode);
+  TrieNode *children = (TrieNode *)node->children.allocation;
+
+  bool found = false;
+  int index = get_insert_index(children, children_count, &found, c);
+
+  if (!found) {
+    TrieNode empty = {};
+    empty.c = c;
+    list_insert(&node->children, index, &empty, sizeof(TrieNode));
+
+    node->set = bitset_set(node->set, c);
+    children = (TrieNode *)node->children.allocation;
+    children_count = node->children.size / sizeof(TrieNode);
   }
+  assert(index < children_count);
+  return children + index;
 }
 
 TrieNode *node_insert(TrieNode *node, const char *key) {
@@ -156,6 +214,8 @@ TrieNode *node_find(TrieNode *node, const char *key) {
     char c = key[i];
     if (c == 0) {
       return current;
+    } else if ('A' <= c && c <= 'Z') {
+      c = 'a' + (c - 'A');
     }
     TrieNode *child = find_child(current, c);
     if (child) {
@@ -252,7 +312,6 @@ typedef struct {
 } Contact;
 
 void exists() { printf("Kontakt jiz existuje.\n"); }
-
 void bad() { printf("Nespravny vstup.\n"); }
 
 bool leaf_add_data(TrieNode *node, ArrayList *contacts, const char *number,
@@ -422,30 +481,9 @@ void do_query(char *line, ArrayList *contacts, ArrayList *stack,
   printf("Celkem: %d\n", collected_size);
 }
 
-void dispatch(char **line, size_t *line_len, ArrayList *contacts,
-              ArrayList *stack, ArrayList *collected, TrieNode *number_trie,
-              TrieNode *name_trie) {
-  while (getline(line, line_len, stdin) > 0) {
-    DEBUGF("%s", *line);
-    switch (**line) {
-    case '+':
-      add_number(*line, contacts, number_trie, name_trie);
-      break;
-    case '?':
-      do_query(*line, contacts, stack, collected, number_trie, name_trie);
-      break;
-    case '\0':
-      DEBUG("EOF\n");
-      return;
-    default:
-      bad();
-      DEBUGF("unexpected character '%c'\n", **line);
-      break;
-    }
-  }
-}
-
 int main() {
+  populate_lut();
+
   ArrayList contacts = {};
   ArrayList stack = {};
   ArrayList collected = {};
@@ -455,8 +493,23 @@ int main() {
   char *line = NULL;
   size_t line_len = 0;
 
-  dispatch(&line, &line_len, &contacts, &stack, &collected, &number_trie,
-           &name_trie);
+  while (getline(&line, &line_len, stdin) > 0) {
+    switch (*line) {
+    case '+':
+      add_number(line, &contacts, &number_trie, &name_trie);
+      break;
+    case '?':
+      do_query(line, &contacts, &stack, &collected, &number_trie, &name_trie);
+      break;
+    case '\0':
+      DEBUG("EOF\n");
+      break;
+    default:
+      bad();
+      DEBUGF("unexpected character '%c'\n", *line);
+      break;
+    }
+  }
 
   int contacts_size = contacts.size / sizeof(Contact);
   Contact *contacts_ptr = (Contact *)contacts.allocation;
