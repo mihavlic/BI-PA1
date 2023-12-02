@@ -7,9 +7,9 @@
 #include <stdio.h>
 
 #ifndef __PROGTEST__
-#define DEBUG(fmt) fprintf(stderr, "%s:%d " fmt, __FILE__, __LINE__);
+#define DEBUG(fmt) fprintf(stderr, "%s:%d " fmt, __FILE__, __LINE__)
 #define DEBUGF(fmt, ...)                                                       \
-  fprintf(stderr, "%s:%d " fmt, __FILE__, __LINE__, __VA_ARGS__);
+  fprintf(stderr, "%s:%d " fmt, __FILE__, __LINE__, ##__VA_ARGS__)
 #else
 #define DEBUG(fmt)
 #define DEBUGF(fmt, ...)
@@ -40,6 +40,32 @@ void list_push(ArrayList *list, void *element, int size) {
   list->size = new_size;
 }
 
+void list_pop(ArrayList *list, void *element, int size) {
+  int new_size = list->size - size;
+  assert(new_size >= 0);
+  if (element) {
+    memcpy(element, (char *)list->allocation + new_size, size);
+  }
+  list->size = new_size;
+}
+
+// decrements list size by removing the last element but returns a pointer to
+// the popped memory, you must not call list_push while holding this pointer
+void *unsafe_list_pop(ArrayList *list, int size) {
+  int new_size = list->size - size;
+  assert(new_size >= 0);
+  list->size = new_size;
+  return (char *)list->allocation + new_size;
+}
+
+void *list_peek(ArrayList *list, int size) {
+  int offset = list->size - size;
+  if (offset < 0) {
+    return NULL;
+  }
+  return (char *)list->allocation + offset;
+}
+
 // index is not a byte offset
 void list_insert(ArrayList *list, int index, void *element, int size) {
   int new_size = list->size + size;
@@ -61,13 +87,22 @@ typedef struct {
 } TrieNode;
 
 void node_free(TrieNode *node) {
-  int children_count = node->children.size / sizeof(TrieNode);
-  TrieNode *children = (TrieNode *)node->children.allocation;
-  for (int j = 0; j < children_count; j++) {
-    node_free(children + j);
+  ArrayList stack = {};
+  list_push(&stack, &node, sizeof(TrieNode *));
+
+  while (stack.size > 0) {
+    TrieNode *last = *((TrieNode **)list_peek(&stack, sizeof(TrieNode *)));
+    if (last->children.size == 0) {
+      list_free(&last->children);
+      list_free(&last->leaf_data);
+      list_pop(&stack, NULL, sizeof(TrieNode *));
+    } else {
+      TrieNode *pop =
+          (TrieNode *)unsafe_list_pop(&last->children, sizeof(TrieNode));
+      list_push(&stack, &pop, sizeof(TrieNode *));
+    }
   }
-  list_free(&node->children);
-  list_free(&node->leaf_data);
+  list_free(&stack);
 }
 
 TrieNode *find_child(TrieNode *node, char key) {
@@ -91,7 +126,6 @@ TrieNode *node_add_child(TrieNode *node) {
 }
 
 TrieNode *find_or_insert_child(TrieNode *node, char c) {
-
   TrieNode *child = find_child(node, c);
   if (child) {
     return child;
@@ -105,10 +139,10 @@ TrieNode *find_or_insert_child(TrieNode *node, char c) {
 TrieNode *node_insert(TrieNode *node, const char *key) {
   assert(*key != 0);
   TrieNode *current = node;
-  for (int i = 0;; i++) {
+  for (int i = 0; key[i] != 0; i++) {
     char c = key[i];
-    if (c == 0) {
-      break;
+    if ('A' <= c && c <= 'Z') {
+      c = 'a' + (c - 'A');
     }
     current = find_or_insert_child(current, c);
   }
@@ -117,7 +151,6 @@ TrieNode *node_insert(TrieNode *node, const char *key) {
 
 TrieNode *node_find(TrieNode *node, const char *key) {
   assert(*key != 0);
-
   TrieNode *current = node;
   for (int i = 0;; i++) {
     char c = key[i];
@@ -136,47 +169,79 @@ TrieNode *node_find(TrieNode *node, const char *key) {
 }
 
 const char *get_T9(char c) {
-  static const char *T9[9] = {" ",        "abcABC", "defDEF",
-                              "ghiGHI",   "jklJKL", "mnoMNO",
-                              "pqrsPQRS", "tuvTUV", "wxyzWXYZ"};
+  static const char *T9[10] = {"",    " ",   "abc",  "def", "ghi",
+                               "jkl", "mno", "pqrs", "tuv", "wxyz"};
   if (c < '1' || '9' < c) {
-    return NULL;
+    return T9[0];
   }
-  return T9[c - '1'];
+  return T9[c - '0'];
 }
 
-void visit_children(TrieNode *node, void (*callback)(TrieNode *, void *),
-                    void *callback_data) {
-  callback(node, callback_data);
-
-  int children_count = node->children.size / sizeof(TrieNode);
-  TrieNode *children = (TrieNode *)node->children.allocation;
-
-  for (int i = 0; i < children_count; i++) {
-    TrieNode *child = children + i;
-    visit_children(child, callback, callback_data);
+void collect_leaf_data(TrieNode *node, ArrayList *collected) {
+  if (node->c != 0 && node->leaf_data.size > 0) {
+    list_push(collected, node->leaf_data.allocation, node->leaf_data.size);
   }
 }
 
-void visit_children_t9(TrieNode *node, const char *key, int level,
-                       void (*callback)(TrieNode *, void *),
-                       void *callback_data) {
-  callback(node, callback_data);
+void collect_children(TrieNode *node, ArrayList *stack, ArrayList *collected) {
+  int start_size = stack->size;
+  list_push(stack, &node, sizeof(TrieNode *));
 
-  char c = key[level];
-  if (c == 0) {
-    return visit_children(node, callback, callback_data);
+  while (stack->size > start_size) {
+    TrieNode *pop;
+    list_pop(stack, &pop, sizeof(TrieNode *));
+    while (true) {
+      collect_leaf_data(pop, collected);
+
+      int children_count = pop->children.size / sizeof(TrieNode);
+      TrieNode *children = (TrieNode *)pop->children.allocation;
+
+      // avoid pushing and popping a single element
+      if (children_count == 1) {
+        pop = children;
+        continue;
+      }
+
+      for (int i = 0; i < children_count; i++) {
+        TrieNode *child = children + i;
+        list_push(stack, &child, sizeof(TrieNode *));
+      }
+      break;
+    }
   }
+}
 
-  const char *decoded = get_T9(c);
-  if (!decoded) {
-    return;
-  }
+void collect_children_t9(TrieNode *node, ArrayList *stack, ArrayList *collected,
+                         const char *key) {
+  assert(*key != 0);
 
-  for (int i = 0; decoded[i] != 0; i++) {
-    TrieNode *child = find_child(node, decoded[i]);
-    if (child) {
-      visit_children_t9(child, key, level + 1, callback, callback_data);
+  typedef struct {
+    TrieNode *node;
+    int level;
+  } StackTuple;
+
+  int start_size = stack->size;
+  StackTuple first = {node, 0};
+  list_push(stack, &first, sizeof(StackTuple));
+  int key_len = strlen(key);
+
+  while (stack->size > start_size) {
+    StackTuple pop = {};
+    list_pop(stack, &pop, sizeof(StackTuple));
+    if (pop.level >= key_len) {
+      collect_children(pop.node, stack, collected);
+    } else {
+      char c = key[pop.level];
+      assert(c != 0);
+
+      const char *decoded = get_T9(c);
+      for (int i = 0; decoded[i] != 0; i++) {
+        TrieNode *child = find_child(pop.node, decoded[i]);
+        if (child) {
+          StackTuple first = {child, pop.level + 1};
+          list_push(stack, &first, sizeof(StackTuple));
+        }
+      }
     }
   }
 }
@@ -227,7 +292,7 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
     }
   }
   ptrdiff_t number_size = (ptrdiff_t)(line - number_start);
-  if (number_size < 1 || number_size > 20) {
+  if ((number_size - 1) < 1 || (number_size - 1) > 20) {
     return bad();
   }
 
@@ -247,7 +312,7 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
     }
   }
   ptrdiff_t name_size = (ptrdiff_t)(line - name_start);
-  if (name_size < 1) {
+  if ((name_size - 1) < 1) {
     return bad();
   }
 
@@ -273,13 +338,6 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
     return exists();
 
   printf("OK\n");
-}
-
-void add_contact(TrieNode *node, void *data) {
-  ArrayList *list = (ArrayList *)data;
-  if (node->c != 0 && node->leaf_data.size > 0) {
-    list_push(list, node->leaf_data.allocation, node->leaf_data.size);
-  }
 }
 
 int compare_ints(const void *a, const void *b) {
@@ -312,8 +370,9 @@ int int_dedup(int *array, int size) {
   return dst;
 }
 
-void do_query(char *line, ArrayList *contacts, ArrayList *scratch,
-              TrieNode *number_trie, TrieNode *name_trie) {
+void do_query(char *line, ArrayList *contacts, ArrayList *stack,
+              ArrayList *collected, TrieNode *number_trie,
+              TrieNode *name_trie) {
   // ? 1234567
   if (*(line++) != '?')
     return bad();
@@ -334,43 +393,46 @@ void do_query(char *line, ArrayList *contacts, ArrayList *scratch,
   *(line - 1) = 0;
 
   ptrdiff_t number_size = line - number_start - 1;
-  if (number_size < 1 || number_size > 20) {
+  if (number_size < 1) {
     return bad();
   }
 
   TrieNode *found = node_find(number_trie, number_start);
 
-  list_reset(scratch);
+  list_reset(stack);
+  list_reset(collected);
   if (found) {
-    visit_children(found, add_contact, scratch);
+    collect_children(found, stack, collected);
   }
-  visit_children_t9(name_trie, number_start, 0, add_contact, scratch);
+  collect_children_t9(name_trie, stack, collected, number_start);
 
-  qsort(scratch->allocation, scratch->size / sizeof(int), sizeof(int),
+  qsort(collected->allocation, collected->size / sizeof(int), sizeof(int),
         compare_ints);
-  int scratch_size =
-      int_dedup((int *)scratch->allocation, scratch->size / sizeof(int));
+  int collected_size =
+      int_dedup((int *)collected->allocation, collected->size / sizeof(int));
 
-  if (scratch_size <= 10) {
-    for (int i = 0; i < scratch_size; i++) {
-      int index = ((int *)scratch->allocation)[i];
+  if (collected_size <= 10) {
+    for (int i = 0; i < collected_size; i++) {
+      int index = ((int *)collected->allocation)[i];
       Contact *contact = ((Contact *)contacts->allocation) + index;
       printf("%s %s\n", contact->number, contact->name);
     }
   }
 
-  printf("Celkem: %d\n", scratch_size);
+  printf("Celkem: %d\n", collected_size);
 }
 
 void dispatch(char **line, size_t *line_len, ArrayList *contacts,
-              ArrayList *scratch, TrieNode *number_trie, TrieNode *name_trie) {
+              ArrayList *stack, ArrayList *collected, TrieNode *number_trie,
+              TrieNode *name_trie) {
   while (getline(line, line_len, stdin) > 0) {
+    DEBUGF("%s", *line);
     switch (**line) {
     case '+':
       add_number(*line, contacts, number_trie, name_trie);
       break;
     case '?':
-      do_query(*line, contacts, scratch, number_trie, name_trie);
+      do_query(*line, contacts, stack, collected, number_trie, name_trie);
       break;
     case '\0':
       DEBUG("EOF\n");
@@ -385,14 +447,16 @@ void dispatch(char **line, size_t *line_len, ArrayList *contacts,
 
 int main() {
   ArrayList contacts = {};
-  ArrayList scratch = {};
+  ArrayList stack = {};
+  ArrayList collected = {};
   TrieNode number_trie = {};
   TrieNode name_trie = {};
 
   char *line = NULL;
   size_t line_len = 0;
 
-  dispatch(&line, &line_len, &contacts, &scratch, &number_trie, &name_trie);
+  dispatch(&line, &line_len, &contacts, &stack, &collected, &number_trie,
+           &name_trie);
 
   int contacts_size = contacts.size / sizeof(Contact);
   Contact *contacts_ptr = (Contact *)contacts.allocation;
@@ -403,7 +467,8 @@ int main() {
 
   free(line);
   list_free(&contacts);
-  list_free(&scratch);
+  list_free(&stack);
+  list_free(&collected);
   node_free(&number_trie);
   node_free(&name_trie);
   return 0;
