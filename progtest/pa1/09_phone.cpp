@@ -84,8 +84,9 @@ void list_free(ArrayList *list) { free(list->allocation); }
 typedef uint64_t CharBitSet;
 
 static unsigned char CHAR_BIT_SET_LUT[256] = {};
+static unsigned char T9_LUT[256] = {};
 
-void populate_lut() {
+void populate_luts() {
   unsigned char counter = 0;
   for (char i = 'a'; i <= 'z'; i++) {
     CHAR_BIT_SET_LUT[(int)i] = counter++;
@@ -94,6 +95,17 @@ void populate_lut() {
     CHAR_BIT_SET_LUT[(int)i] = counter++;
   }
   CHAR_BIT_SET_LUT[(int)' '] = counter++;
+
+  const char *T9[10] = {"",    " ",   "abc",  "def", "ghi",
+                        "jkl", "mno", "pqrs", "tuv", "wxyz"};
+  for (int i = 0; i < 10; i++) {
+    const char *str = T9[i];
+    for (int j = 0; str[j] != 0; j++) {
+      char jc = str[j];
+      T9_LUT[(int)jc] = '0' + i;
+      T9_LUT['A' + (jc - 'a')] = '0' + i;
+    }
+  }
 }
 
 bool bitset_contains(CharBitSet set, char c) {
@@ -199,9 +211,6 @@ TrieNode *node_insert(TrieNode *node, const char *key) {
   TrieNode *current = node;
   for (int i = 0; key[i] != 0; i++) {
     char c = key[i];
-    if ('A' <= c && c <= 'Z') {
-      c = 'a' + (c - 'A');
-    }
     current = find_or_insert_child(current, c);
   }
   return current;
@@ -214,8 +223,6 @@ TrieNode *node_find(TrieNode *node, const char *key) {
     char c = key[i];
     if (c == 0) {
       return current;
-    } else if ('A' <= c && c <= 'Z') {
-      c = 'a' + (c - 'A');
     }
     TrieNode *child = find_child(current, c);
     if (child) {
@@ -228,13 +235,10 @@ TrieNode *node_find(TrieNode *node, const char *key) {
   return NULL;
 }
 
-const char *get_T9(char c) {
-  static const char *T9[10] = {"",    " ",   "abc",  "def", "ghi",
-                               "jkl", "mno", "pqrs", "tuv", "wxyz"};
-  if (c < '1' || '9' < c) {
-    return T9[0];
+void encode_t9(char *string) {
+  for (int i = 0; string[i] != 0; i++) {
+    string[i] = T9_LUT[(int)string[i]];
   }
-  return T9[c - '0'];
 }
 
 void collect_leaf_data(TrieNode *node, ArrayList *collected) {
@@ -271,41 +275,6 @@ void collect_children(TrieNode *node, ArrayList *stack, ArrayList *collected) {
   }
 }
 
-void collect_children_t9(TrieNode *node, ArrayList *stack, ArrayList *collected,
-                         const char *key) {
-  assert(*key != 0);
-
-  typedef struct {
-    TrieNode *node;
-    int level;
-  } StackTuple;
-
-  int start_size = stack->size;
-  StackTuple first = {node, 0};
-  list_push(stack, &first, sizeof(StackTuple));
-  int key_len = strlen(key);
-
-  while (stack->size > start_size) {
-    StackTuple pop = {};
-    list_pop(stack, &pop, sizeof(StackTuple));
-    if (pop.level >= key_len) {
-      collect_children(pop.node, stack, collected);
-    } else {
-      char c = key[pop.level];
-      assert(c != 0);
-
-      const char *decoded = get_T9(c);
-      for (int i = 0; decoded[i] != 0; i++) {
-        TrieNode *child = find_child(pop.node, decoded[i]);
-        if (child) {
-          StackTuple first = {child, pop.level + 1};
-          list_push(stack, &first, sizeof(StackTuple));
-        }
-      }
-    }
-  }
-}
-
 typedef struct {
   char *number;
   char *name;
@@ -332,7 +301,7 @@ bool leaf_add_data(TrieNode *node, ArrayList *contacts, const char *number,
 }
 
 void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
-                TrieNode *name_trie) {
+                TrieNode *t9_name_trie) {
   // + 123456 Vagner Ladislav
   if (*(line++) != '+')
     return bad();
@@ -370,6 +339,8 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
       return bad();
     }
   }
+  *(line - 1) = 0;
+
   ptrdiff_t name_size = (ptrdiff_t)(line - name_start);
   if ((name_size - 1) < 1) {
     return bad();
@@ -392,7 +363,8 @@ void add_number(char *line, ArrayList *contacts, TrieNode *number_trie,
   if (leaf_add_data(node, contacts, number, name, new_contact))
     return exists();
 
-  node = node_insert(name_trie, name);
+  encode_t9(name_start);
+  node = node_insert(t9_name_trie, name_start);
   if (leaf_add_data(node, contacts, number, name, new_contact))
     return exists();
 
@@ -431,7 +403,7 @@ int int_dedup(int *array, int size) {
 
 void do_query(char *line, ArrayList *contacts, ArrayList *stack,
               ArrayList *collected, TrieNode *number_trie,
-              TrieNode *name_trie) {
+              TrieNode *t9_name_trie) {
   // ? 1234567
   if (*(line++) != '?')
     return bad();
@@ -456,14 +428,19 @@ void do_query(char *line, ArrayList *contacts, ArrayList *stack,
     return bad();
   }
 
-  TrieNode *found = node_find(number_trie, number_start);
-
   list_reset(stack);
   list_reset(collected);
+
+  TrieNode *found = {};
+  found = node_find(number_trie, number_start);
   if (found) {
     collect_children(found, stack, collected);
   }
-  collect_children_t9(name_trie, stack, collected, number_start);
+
+  found = node_find(t9_name_trie, number_start);
+  if (found) {
+    collect_children(found, stack, collected);
+  }
 
   qsort(collected->allocation, collected->size / sizeof(int), sizeof(int),
         compare_ints);
@@ -482,13 +459,13 @@ void do_query(char *line, ArrayList *contacts, ArrayList *stack,
 }
 
 int main() {
-  populate_lut();
+  populate_luts();
 
   ArrayList contacts = {};
   ArrayList stack = {};
   ArrayList collected = {};
   TrieNode number_trie = {};
-  TrieNode name_trie = {};
+  TrieNode t9_name_trie = {};
 
   char *line = NULL;
   size_t line_len = 0;
@@ -496,10 +473,11 @@ int main() {
   while (getline(&line, &line_len, stdin) > 0) {
     switch (*line) {
     case '+':
-      add_number(line, &contacts, &number_trie, &name_trie);
+      add_number(line, &contacts, &number_trie, &t9_name_trie);
       break;
     case '?':
-      do_query(line, &contacts, &stack, &collected, &number_trie, &name_trie);
+      do_query(line, &contacts, &stack, &collected, &number_trie,
+               &t9_name_trie);
       break;
     case '\0':
       DEBUG("EOF\n");
@@ -523,6 +501,6 @@ int main() {
   list_free(&stack);
   list_free(&collected);
   node_free(&number_trie);
-  node_free(&name_trie);
+  node_free(&t9_name_trie);
   return 0;
 }
