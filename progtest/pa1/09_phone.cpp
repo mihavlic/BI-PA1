@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 
@@ -324,27 +325,36 @@ bool leaf_add_data(Trie *trie, NodeHandle handle, ArrayList *contacts,
   return false;
 }
 
+#define EXPECT(char)                                                           \
+  if (*(line++) != char) {                                                     \
+    DEBUGF("Unexpected character '%c'", char);                                 \
+    return bad();                                                              \
+  }
+
+int expect_sequence(char **line, int (*function)(int), char end) {
+  char *start = *line;
+  while (function(**line)) {
+    *line += 1;
+  }
+  if (**line == end) {
+    ptrdiff_t size = *line - start;
+    **line = '\0';
+    *line += 1;
+    return size;
+  }
+  DEBUGF("Unexpected character '%c'", **line);
+  return -1;
+}
+
 void add_number(char *line, ArrayList *contacts, Trie *number_trie,
                 Trie *t9_name_trie) {
   // + 123456 Vagner Ladislav
-  if (*(line++) != '+')
-    return bad();
-  if (*(line++) != ' ')
-    return bad();
+  EXPECT('+')
+  EXPECT(' ')
 
   char *number_start = line;
-  while (true) {
-    char c = *(line++);
-    if ('0' <= c && c <= '9') {
-    } else if (c == ' ') {
-      break;
-    } else {
-      DEBUGF("Unexpected character when reading number '%c'\n", c);
-      return bad();
-    }
-  }
-  ptrdiff_t number_size = (ptrdiff_t)(line - number_start);
-  if ((number_size - 1) < 1 || (number_size - 1) > 20) {
+  int number_size = expect_sequence(&line, isdigit, ' ');
+  if (number_size < 1 || number_size > 20) {
     return bad();
   }
 
@@ -353,30 +363,17 @@ void add_number(char *line, ArrayList *contacts, Trie *number_trie,
   }
 
   char *name_start = line;
-  while (true) {
-    char c = *(line++);
-    if (('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') || c == ' ') {
-    } else if (c == '\n') {
-      break;
-    } else {
-      DEBUGF("Unexpected character when reading number '%c'\n", c);
-      return bad();
-    }
-  }
-  *(line - 1) = 0;
-
-  ptrdiff_t name_size = (ptrdiff_t)(line - name_start);
-  if ((name_size - 1) < 1) {
+  int name_size = expect_sequence(
+      &line, [](int c) -> int { return isalpha(c) || c == ' '; }, '\n');
+  if (name_size < 1) {
     return bad();
   }
 
-  char *number = (char *)malloc(number_size);
-  memcpy(number, number_start, number_size - 1);
-  number[number_size - 1] = 0;
+  char *number = (char *)malloc(number_size + 1);
+  memcpy(number, number_start, number_size + 1);
 
-  char *name = (char *)malloc(name_size);
-  memcpy(name, name_start, name_size - 1);
-  name[name_size - 1] = 0;
+  char *name = (char *)malloc(name_size + 1);
+  memcpy(name, name_start, name_size + 1);
 
   Contact contact = {number, name};
   int new_contact = contacts->size / sizeof(Contact);
@@ -384,13 +381,15 @@ void add_number(char *line, ArrayList *contacts, Trie *number_trie,
 
   NodeHandle node = TRIE_NULL;
   node = node_insert(number_trie, number);
-  if (leaf_add_data(number_trie, node, contacts, number, name, new_contact))
+  if (leaf_add_data(number_trie, node, contacts, number, name, new_contact)) {
     return exists();
+  }
 
   encode_t9(name_start);
   node = node_insert(t9_name_trie, name_start);
-  if (leaf_add_data(t9_name_trie, node, contacts, number, name, new_contact))
+  if (leaf_add_data(t9_name_trie, node, contacts, number, name, new_contact)) {
     return exists();
+  }
 
   printf("OK\n");
 }
@@ -428,25 +427,11 @@ int int_dedup(int *array, int size) {
 void do_query(char *line, ArrayList *contacts, ArrayList *stack,
               ArrayList *collected, Trie *number_trie, Trie *t9_name_trie) {
   // ? 1234567
-  if (*(line++) != '?')
-    return bad();
-  if (*(line++) != ' ')
-    return bad();
+  EXPECT('?')
+  EXPECT(' ')
 
   const char *number_start = line;
-  while (true) {
-    char c = *(line++);
-    if ('0' <= c && c <= '9') {
-    } else if (c == '\n') {
-      break;
-    } else {
-      DEBUGF("Unexpected character when reading number '%c'\n", c);
-      return bad();
-    }
-  }
-  *(line - 1) = 0;
-
-  ptrdiff_t number_size = line - number_start - 1;
+  int number_size = expect_sequence(&line, isdigit, '\n');
   if (number_size < 1) {
     return bad();
   }
