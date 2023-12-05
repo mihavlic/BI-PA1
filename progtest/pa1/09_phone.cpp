@@ -50,23 +50,6 @@ void list_pop(ArrayList *list, void *element, int size) {
   list->size = new_size;
 }
 
-// decrements list size by removing the last element but returns a pointer to
-// the popped memory, you must not call list_push while holding this pointer
-void *unsafe_list_pop(ArrayList *list, int size) {
-  int new_size = list->size - size;
-  assert(new_size >= 0);
-  list->size = new_size;
-  return (char *)list->allocation + new_size;
-}
-
-void *list_peek(ArrayList *list, int size) {
-  int offset = list->size - size;
-  if (offset < 0) {
-    return NULL;
-  }
-  return (char *)list->allocation + offset;
-}
-
 // index is not a byte offset
 void list_insert(ArrayList *list, int index, void *element, int size) {
   int new_size = list->size + size;
@@ -84,19 +67,22 @@ void list_free(ArrayList *list) { free(list->allocation); }
 // a bitset of characters, stores [a-z0-9 ]
 typedef uint64_t CharBitSet;
 
-static unsigned char CHAR_BIT_SET_LUT[256] = {};
+static unsigned char ALPHABET_LUT[256] = {};
 static unsigned char T9_LUT[256] = {};
 
 void populate_luts() {
+  // ascii to reduced alphabet
   unsigned char counter = 0;
   for (char i = 'a'; i <= 'z'; i++) {
-    CHAR_BIT_SET_LUT[(int)i] = counter++;
+    ALPHABET_LUT[(int)i] = counter;
+    ALPHABET_LUT['A' + (i - 'a')] = counter++;
   }
-  for (char i = '0'; i <= '9'; i++) {
-    CHAR_BIT_SET_LUT[(int)i] = counter++;
-  }
-  CHAR_BIT_SET_LUT[(int)' '] = counter++;
+  ALPHABET_LUT[(int)' '] = counter++;
 
+  for (char i = '0'; i <= '9'; i++) {
+    ALPHABET_LUT[(int)i] = counter++;
+  }
+  // ascii to t9
   const char *T9[10] = {"",    " ",   "abc",  "def", "ghi",
                         "jkl", "mno", "pqrs", "tuv", "wxyz"};
   for (int i = 0; i < 10; i++) {
@@ -109,54 +95,52 @@ void populate_luts() {
   }
 }
 
-bool bitset_contains(CharBitSet set, char c) {
-  unsigned char bit_index = CHAR_BIT_SET_LUT[(int)c];
-  return ((set >> (CharBitSet)bit_index) & 1) == 1;
-}
+constexpr int ALPHABET_SIZE = 26 + 1;
 
-CharBitSet bitset_set(CharBitSet set, char c) {
-  unsigned char bit_index = CHAR_BIT_SET_LUT[(int)c];
-  return set | ((CharBitSet)1 << bit_index);
-}
+typedef int NodeHandle;
+constexpr NodeHandle TRIE_ROOT = 0;
+constexpr NodeHandle TRIE_NULL = -1;
 
 typedef struct {
   char c;
-  CharBitSet set;
-  ArrayList children;
   ArrayList leaf_data;
+  NodeHandle alphabet[ALPHABET_SIZE];
 } TrieNode;
 
 typedef struct {
   ArrayList nodes;
 } Trie;
 
-typedef int NodeHandle;
-constexpr NodeHandle TRIE_ROOT = 0;
-constexpr NodeHandle TRIE_NULL = -1;
+void node_init(TrieNode *node, char c) {
+  node->c = c;
+  node->leaf_data = {};
+  for (int i = 0; i < ALPHABET_SIZE; i++) {
+    node->alphabet[i] = -1;
+  }
+}
 
 void trie_init(Trie *trie) {
   *trie = {};
   assert(trie->nodes.size == 0);
   TrieNode empty = {};
+  node_init(&empty, 0);
   list_push(&trie->nodes, &empty, sizeof(TrieNode));
 }
 
 void trie_free(Trie *trie) {
   int node_count = trie->nodes.size / sizeof(TrieNode);
   TrieNode *nodes = (TrieNode *)trie->nodes.allocation;
-
   for (int i = 0; i < node_count; i++) {
     TrieNode *node = nodes + i;
-    list_free(&node->children);
     list_free(&node->leaf_data);
   }
   list_free(&trie->nodes);
 }
 
-NodeHandle trie_add(Trie *trie, char c) {
+NodeHandle trie_new_node(Trie *trie, char c) {
   NodeHandle offset = trie->nodes.size / sizeof(TrieNode);
   TrieNode empty = {};
-  empty.c = c;
+  node_init(&empty, c);
   list_push(&trie->nodes, &empty, sizeof(TrieNode));
   return offset;
 }
@@ -167,72 +151,37 @@ TrieNode *trie_get(Trie *trie, NodeHandle handle) {
   return nodes + handle;
 }
 
-// binary search an index to insert an element so that the array remains sorted
-// stolen from the rust standard library
-// https://doc.rust-lang.org/src/core/slice/mod.rs.html#2771-2773
-int get_insert_index(Trie *trie, NodeHandle *array, int size, bool *found,
-                     char x) {
-  int left = 0;
-  int right = size;
-  while (left < right) {
-    int mid = left + size / 2;
-    TrieNode *node = trie_get(trie, array[mid]);
-    char c = node->c;
-
-    if (c < x) {
-      left = mid + 1;
-    } else if (c > x) {
-      right = mid;
-    } else {
-      *found = true;
-      return mid;
-    }
-
-    size = right - left;
+int get_alphabet_index(char c) {
+  unsigned char index = ALPHABET_LUT[(int)c];
+  if (index >= ALPHABET_SIZE) {
+    index -= ALPHABET_SIZE;
   }
-  *found = false;
-  return left;
+  return index;
 }
 
 NodeHandle find_child(Trie *trie, NodeHandle handle, char key) {
   assert(key != 0);
   TrieNode *node = trie_get(trie, handle);
 
-  if (!bitset_contains(node->set, key)) {
-    return TRIE_NULL;
-  }
-
-  int children_count = node->children.size / sizeof(NodeHandle);
-  NodeHandle *children = (NodeHandle *)node->children.allocation;
-
-  bool found = false;
-  int index = get_insert_index(trie, children, children_count, &found, key);
-  assert(found);
-  assert(index < children_count);
-
-  return children[index];
+  int index = get_alphabet_index(key);
+  return node->alphabet[index];
 }
 
-NodeHandle find_or_insert_child(Trie *trie, NodeHandle handle, char c) {
+NodeHandle find_or_insert_child(Trie *trie, NodeHandle handle, char key) {
+  assert(key != 0);
   TrieNode *node = trie_get(trie, handle);
 
-  int children_count = node->children.size / sizeof(NodeHandle);
-  NodeHandle *children = (NodeHandle *)node->children.allocation;
+  int index = get_alphabet_index(key);
+  NodeHandle child = node->alphabet[index];
 
-  bool found = false;
-  int index = get_insert_index(trie, children, children_count, &found, c);
-
-  if (!found) {
-    NodeHandle inserted = trie_add(trie, c);
+  if (child == TRIE_NULL) {
+    NodeHandle inserted = trie_new_node(trie, key);
     node = trie_get(trie, handle);
-    list_insert(&node->children, index, &inserted, sizeof(NodeHandle));
-
-    node->set = bitset_set(node->set, c);
-    children = (NodeHandle *)node->children.allocation;
-    children_count = node->children.size / sizeof(NodeHandle);
+    child = inserted;
+    node->alphabet[index] = inserted;
   }
-  assert(index < children_count);
-  return children[index];
+
+  return child;
 }
 
 NodeHandle node_insert(Trie *trie, const char *key) {
@@ -279,21 +228,14 @@ void collect_children(Trie *trie, NodeHandle node, ArrayList *stack,
     NodeHandle handle;
     list_pop(stack, &handle, sizeof(NodeHandle));
 
-    while (true) {
-      TrieNode *pop = trie_get(trie, handle);
-      collect_leaf_data(pop, collected);
+    TrieNode *pop = trie_get(trie, handle);
+    collect_leaf_data(pop, collected);
 
-      int children_count = pop->children.size / sizeof(NodeHandle);
-      NodeHandle *children = (NodeHandle *)pop->children.allocation;
-
-      // avoid pushing and popping a single element
-      if (children_count == 1) {
-        handle = children[0];
-        continue;
+    for (int i = 0; i < ALPHABET_SIZE; i++) {
+      NodeHandle child = pop->alphabet[i];
+      if (child != TRIE_NULL) {
+        list_push(stack, &child, sizeof(NodeHandle));
       }
-
-      list_push(stack, pop->children.allocation, pop->children.size);
-      break;
     }
   }
 }
