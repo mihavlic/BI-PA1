@@ -34,7 +34,7 @@ void list_reserve(ArrayList *list, int new_size) {
   }
 }
 
-void list_push(ArrayList *list, void *element, int size) {
+void list_push(ArrayList *list, const void *element, int size) {
   int new_size = list->size + size;
   list_reserve(list, new_size);
   memcpy((char *)list->allocation + list->size, element, size);
@@ -79,6 +79,7 @@ void populate_luts() {
   }
   ALPHABET_LUT[(int)' '] = counter++;
 
+  counter = 0;
   for (char i = '0'; i <= '9'; i++) {
     ALPHABET_LUT[(int)i] = counter++;
   }
@@ -102,17 +103,18 @@ constexpr NodeHandle TRIE_ROOT = 0;
 constexpr NodeHandle TRIE_NULL = -1;
 
 typedef struct {
-  char c;
+  int string_start;
+  int string_end;
   ArrayList leaf_data;
   NodeHandle alphabet[ALPHABET_SIZE];
 } TrieNode;
 
 typedef struct {
   ArrayList nodes;
+  ArrayList string;
 } Trie;
 
-void node_init(TrieNode *node, char c) {
-  node->c = c;
+void node_init(TrieNode *node) {
   node->leaf_data = {};
   for (int i = 0; i < ALPHABET_SIZE; i++) {
     node->alphabet[i] = -1;
@@ -121,9 +123,9 @@ void node_init(TrieNode *node, char c) {
 
 void trie_init(Trie *trie) {
   *trie = {};
-  assert(trie->nodes.size == 0);
+  assert(trie->nodes.allocation == NULL);
   TrieNode empty = {};
-  node_init(&empty, 0);
+  node_init(&empty);
   list_push(&trie->nodes, &empty, sizeof(TrieNode));
 }
 
@@ -134,13 +136,17 @@ void trie_free(Trie *trie) {
     TrieNode *node = nodes + i;
     list_free(&node->leaf_data);
   }
+  list_free(&trie->string);
   list_free(&trie->nodes);
 }
 
-NodeHandle trie_new_node(Trie *trie, char c) {
+NodeHandle trie_new_node(Trie *trie, int string_start, int string_end) {
+  assert(string_start < string_end);
   NodeHandle offset = trie->nodes.size / sizeof(TrieNode);
   TrieNode empty = {};
-  node_init(&empty, c);
+  node_init(&empty);
+  empty.string_start = string_start;
+  empty.string_end = string_end;
   list_push(&trie->nodes, &empty, sizeof(TrieNode));
   return offset;
 }
@@ -151,11 +157,18 @@ TrieNode *trie_get(Trie *trie, NodeHandle handle) {
   return nodes + handle;
 }
 
+int trie_push_string(Trie *trie, const char *string, int string_len) {
+  NodeHandle offset = trie->string.size / sizeof(char);
+  list_push(&trie->string, string, string_len * sizeof(char));
+  return offset;
+}
+
+const char *trie_get_string(Trie *trie, int offset) {
+  return (const char *)trie->string.allocation + offset;
+}
+
 int get_alphabet_index(char c) {
   unsigned char index = ALPHABET_LUT[(int)c];
-  if (index >= ALPHABET_SIZE) {
-    index -= ALPHABET_SIZE;
-  }
   return index;
 }
 
@@ -167,43 +180,107 @@ NodeHandle find_child(Trie *trie, NodeHandle handle, char key) {
   return node->alphabet[index];
 }
 
-NodeHandle find_or_insert_child(Trie *trie, NodeHandle handle, char key) {
-  assert(key != 0);
-  TrieNode *node = trie_get(trie, handle);
+NodeHandle node_insert(Trie *trie, const char *key, int key_len) {
+  assert(key_len > 0);
+  int key_start = trie_push_string(trie, key, key_len);
+  int key_end = key_start + key_len;
+  const char *string = trie_get_string(trie, 0);
 
-  int index = get_alphabet_index(key);
-  NodeHandle child = node->alphabet[index];
-
-  if (child == TRIE_NULL) {
-    NodeHandle inserted = trie_new_node(trie, key);
-    node = trie_get(trie, handle);
-    child = inserted;
-    node->alphabet[index] = inserted;
-  }
-
-  return child;
-}
-
-NodeHandle node_insert(Trie *trie, const char *key) {
-  assert(*key != 0);
   NodeHandle current = TRIE_ROOT;
-  for (int i = 0; key[i] != 0; i++) {
-    char c = key[i];
-    current = find_or_insert_child(trie, current, c);
+  while (key_start < key_end) {
+    char c = string[key_start];
+    int index = get_alphabet_index(c);
+
+    TrieNode *current_ptr = trie_get(trie, current);
+    NodeHandle child = current_ptr->alphabet[index];
+
+    if (child == TRIE_NULL) {
+      NodeHandle inserted = trie_new_node(trie, key_start, key_end);
+      current_ptr = trie_get(trie, current);
+      current_ptr->alphabet[index] = inserted;
+      return inserted;
+    } else {
+      TrieNode *child_ptr = trie_get(trie, child);
+
+      const char *inserted = string + key_start;
+      const char *original = string + child_ptr->string_start;
+      int inserted_len = key_end - key_start;
+      int original_len = child_ptr->string_end - child_ptr->string_start;
+
+      int min_len = (inserted_len > original_len) ? original_len : inserted_len;
+
+      int same_len = 0;
+      for (; same_len < min_len; same_len++) {
+        if (inserted[same_len] != original[same_len]) {
+          break;
+        }
+      }
+
+      assert(same_len > 0);
+
+      //  current         child
+      //  |-----| -> |---------------|
+      //  |-----| -> |----| -> |-----|
+      //              inserted  child
+      if (same_len == original_len) {
+        current = child;
+      } else {
+        assert(same_len < original_len);
+        NodeHandle inserted =
+            trie_new_node(trie, key_start, key_start + same_len);
+        TrieNode *inserted_ptr = trie_get(trie, inserted);
+        current_ptr = trie_get(trie, current);
+        child_ptr = trie_get(trie, child);
+
+        int new_index = get_alphabet_index(original[same_len]);
+        current_ptr->alphabet[index] = inserted;
+        inserted_ptr->alphabet[new_index] = child;
+
+        child_ptr->string_start += same_len;
+        assert(child_ptr->string_start < child_ptr->string_end);
+
+        current = inserted;
+      }
+      key_start += same_len;
+    }
   }
   return current;
 }
 
-NodeHandle node_find(Trie *trie, const char *key) {
-  assert(*key != 0);
+NodeHandle node_find_prefix(Trie *trie, const char *key, int key_len) {
+  const char *string = trie_get_string(trie, 0);
+  int key_start = 0;
+  int key_end = key_len;
+
   NodeHandle current = TRIE_ROOT;
-  for (int i = 0; key[i] != 0; i++) {
-    current = find_child(trie, current, key[i]);
-    if (current == TRIE_NULL) {
+  while (key_start < key_len) {
+    char c = key[key_start];
+    int index = get_alphabet_index(c);
+
+    TrieNode *current_ptr = trie_get(trie, current);
+    NodeHandle child = current_ptr->alphabet[index];
+    if (child == TRIE_NULL) {
       return TRIE_NULL;
     }
-  }
 
+    TrieNode *child_ptr = trie_get(trie, child);
+    int remaining_key_len = key_end - key_start;
+    int child_key_len = child_ptr->string_end - child_ptr->string_start;
+
+    int min_len =
+        (remaining_key_len > child_key_len) ? child_key_len : remaining_key_len;
+
+    const char *inserted = key + key_start;
+    const char *original = string + child_ptr->string_start;
+    if (strncmp(inserted, original, min_len) != 0) {
+      return TRIE_NULL;
+    }
+
+    current = child;
+    // add the child_key_len instead of min_len on purpose here, if we get past
+    // the end, we'll end the while loop anyway
+    key_start += child_key_len;
+  }
   return current;
 }
 
@@ -214,7 +291,7 @@ void encode_t9(char *string) {
 }
 
 void collect_leaf_data(TrieNode *node, ArrayList *collected) {
-  if (node->c != 0 && node->leaf_data.size > 0) {
+  if (node->leaf_data.size > 0) {
     list_push(collected, node->leaf_data.allocation, node->leaf_data.size);
   }
 }
@@ -322,13 +399,13 @@ void add_number(char *line, ArrayList *contacts, Trie *number_trie,
   list_push(contacts, &contact, sizeof(Contact));
 
   NodeHandle node = TRIE_NULL;
-  node = node_insert(number_trie, number);
+  node = node_insert(number_trie, number, number_size);
   if (leaf_add_data(number_trie, node, contacts, number, name, new_contact)) {
     return exists();
   }
 
   encode_t9(name_start);
-  node = node_insert(t9_name_trie, name_start);
+  node = node_insert(t9_name_trie, name_start, name_size);
   if (leaf_add_data(t9_name_trie, node, contacts, number, name, new_contact)) {
     return exists();
   }
@@ -382,12 +459,12 @@ void do_query(char *line, ArrayList *contacts, ArrayList *stack,
   list_reset(collected);
 
   NodeHandle found = TRIE_NULL;
-  found = node_find(number_trie, number_start);
+  found = node_find_prefix(number_trie, number_start, number_size);
   if (found != TRIE_NULL) {
     collect_children(number_trie, found, stack, collected);
   }
 
-  found = node_find(t9_name_trie, number_start);
+  found = node_find_prefix(t9_name_trie, number_start, number_size);
   if (found != TRIE_NULL) {
     collect_children(t9_name_trie, found, stack, collected);
   }
