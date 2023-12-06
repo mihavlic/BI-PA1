@@ -111,7 +111,6 @@ typedef struct {
 
 typedef struct {
   ArrayList nodes;
-  ArrayList string;
 } Trie;
 
 void node_init(TrieNode *node) {
@@ -136,7 +135,6 @@ void trie_free(Trie *trie) {
     TrieNode *node = nodes + i;
     list_free(&node->leaf_data);
   }
-  list_free(&trie->string);
   list_free(&trie->nodes);
 }
 
@@ -157,14 +155,14 @@ TrieNode *trie_get(Trie *trie, NodeHandle handle) {
   return nodes + handle;
 }
 
-int trie_push_string(Trie *trie, const char *string, int string_len) {
-  NodeHandle offset = trie->string.size / sizeof(char);
-  list_push(&trie->string, string, string_len * sizeof(char));
+int string_push(ArrayList *buffer, const char *string, int string_len) {
+  NodeHandle offset = buffer->size / sizeof(char);
+  list_push(buffer, string, string_len * sizeof(char));
   return offset;
 }
 
-const char *trie_get_string(Trie *trie, int offset) {
-  return (const char *)trie->string.allocation + offset;
+const char *string_get(ArrayList *buffer, int offset) {
+  return (const char *)buffer->allocation + offset;
 }
 
 int get_alphabet_index(char c) {
@@ -180,15 +178,16 @@ NodeHandle find_child(Trie *trie, NodeHandle handle, char key) {
   return node->alphabet[index];
 }
 
-NodeHandle node_insert(Trie *trie, const char *key, int key_len) {
+NodeHandle node_insert(Trie *trie, ArrayList *string, const char *key,
+                       int key_len) {
   assert(key_len > 0);
-  int key_start = trie_push_string(trie, key, key_len);
+  int key_start = string_push(string, key, key_len);
   int key_end = key_start + key_len;
-  const char *string = trie_get_string(trie, 0);
+  const char *str = string_get(string, 0);
 
   NodeHandle current = TRIE_ROOT;
   while (key_start < key_end) {
-    char c = string[key_start];
+    char c = str[key_start];
     int index = get_alphabet_index(c);
 
     TrieNode *current_ptr = trie_get(trie, current);
@@ -202,8 +201,8 @@ NodeHandle node_insert(Trie *trie, const char *key, int key_len) {
     } else {
       TrieNode *child_ptr = trie_get(trie, child);
 
-      const char *inserted = string + key_start;
-      const char *original = string + child_ptr->string_start;
+      const char *inserted = str + key_start;
+      const char *original = str + child_ptr->string_start;
       int inserted_len = key_end - key_start;
       int original_len = child_ptr->string_end - child_ptr->string_start;
 
@@ -247,8 +246,9 @@ NodeHandle node_insert(Trie *trie, const char *key, int key_len) {
   return current;
 }
 
-NodeHandle node_find_prefix(Trie *trie, const char *key, int key_len) {
-  const char *string = trie_get_string(trie, 0);
+NodeHandle node_find_prefix(Trie *trie, ArrayList *string, const char *key,
+                            int key_len) {
+  const char *str = string_get(string, 0);
   int key_start = 0;
   int key_end = key_len;
 
@@ -271,7 +271,7 @@ NodeHandle node_find_prefix(Trie *trie, const char *key, int key_len) {
         (remaining_key_len > child_key_len) ? child_key_len : remaining_key_len;
 
     const char *inserted = key + key_start;
-    const char *original = string + child_ptr->string_start;
+    const char *original = str + child_ptr->string_start;
     if (strncmp(inserted, original, min_len) != 0) {
       return TRIE_NULL;
     }
@@ -365,8 +365,8 @@ int expect_sequence(char **line, int (*function)(int), char end) {
   return -1;
 }
 
-void add_number(char *line, ArrayList *contacts, Trie *number_trie,
-                Trie *t9_name_trie) {
+void add_number(char *line, ArrayList *contacts, ArrayList *string,
+                Trie *number_trie, Trie *t9_name_trie) {
   // + 123456 Vagner Ladislav
   EXPECT('+')
   EXPECT(' ')
@@ -399,13 +399,13 @@ void add_number(char *line, ArrayList *contacts, Trie *number_trie,
   list_push(contacts, &contact, sizeof(Contact));
 
   NodeHandle node = TRIE_NULL;
-  node = node_insert(number_trie, number, number_size);
+  node = node_insert(number_trie, string, number, number_size);
   if (leaf_add_data(number_trie, node, contacts, number, name, new_contact)) {
     return exists();
   }
 
   encode_t9(name_start);
-  node = node_insert(t9_name_trie, name_start, name_size);
+  node = node_insert(t9_name_trie, string, name_start, name_size);
   if (leaf_add_data(t9_name_trie, node, contacts, number, name, new_contact)) {
     return exists();
   }
@@ -444,7 +444,8 @@ int int_dedup(int *array, int size) {
 }
 
 void do_query(char *line, ArrayList *contacts, ArrayList *stack,
-              ArrayList *collected, Trie *number_trie, Trie *t9_name_trie) {
+              ArrayList *collected, ArrayList *string, Trie *number_trie,
+              Trie *t9_name_trie) {
   // ? 1234567
   EXPECT('?')
   EXPECT(' ')
@@ -459,12 +460,12 @@ void do_query(char *line, ArrayList *contacts, ArrayList *stack,
   list_reset(collected);
 
   NodeHandle found = TRIE_NULL;
-  found = node_find_prefix(number_trie, number_start, number_size);
+  found = node_find_prefix(number_trie, string, number_start, number_size);
   if (found != TRIE_NULL) {
     collect_children(number_trie, found, stack, collected);
   }
 
-  found = node_find_prefix(t9_name_trie, number_start, number_size);
+  found = node_find_prefix(t9_name_trie, string, number_start, number_size);
   if (found != TRIE_NULL) {
     collect_children(t9_name_trie, found, stack, collected);
   }
@@ -491,6 +492,7 @@ int main() {
   ArrayList contacts = {};
   ArrayList stack = {};
   ArrayList collected = {};
+  ArrayList string = {};
   Trie number_trie = {};
   Trie t9_name_trie = {};
 
@@ -503,10 +505,10 @@ int main() {
   while (getline(&line, &line_len, stdin) > 0) {
     switch (*line) {
     case '+':
-      add_number(line, &contacts, &number_trie, &t9_name_trie);
+      add_number(line, &contacts, &string, &number_trie, &t9_name_trie);
       break;
     case '?':
-      do_query(line, &contacts, &stack, &collected, &number_trie,
+      do_query(line, &contacts, &stack, &collected, &string, &number_trie,
                &t9_name_trie);
       break;
     case '\0':
@@ -530,6 +532,7 @@ int main() {
   list_free(&contacts);
   list_free(&stack);
   list_free(&collected);
+  list_free(&string);
   trie_free(&number_trie);
   trie_free(&t9_name_trie);
   return 0;
