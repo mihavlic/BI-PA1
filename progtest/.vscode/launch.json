@@ -7,7 +7,7 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug",
+            "name": "Debug with sample",
             "preLaunchTask": "testprog build",
             "program": "${workspaceFolder}/out/${relativeFileDirname}/${fileBasenameNoExtension}",
             "stdio": [
@@ -15,6 +15,15 @@
                 null,
                 null
             ],
+            "args": [],
+            "cwd": "${workspaceFolder}"
+        },
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug run",
+            "preLaunchTask": "testprog build",
+            "program": "${workspaceFolder}/out/${relativeFileDirname}/${fileBasenameNoExtension}",
             "args": [],
             "cwd": "${workspaceFolder}"
         }
