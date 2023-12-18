@@ -53,7 +53,6 @@ MoveKey decode_move(short encoded) {
 typedef struct {
   MoveValue *table;
   int table_len;
-
   int *coins;
   int coins_len;
 } Ctx;
@@ -64,6 +63,7 @@ bool move_is_valid(Ctx *memo, MoveKey move) {
 }
 
 MoveValue *memo_get(Ctx *memo, MoveKey move) {
+  assert(move_is_valid(memo, move));
   int encoded = encode_move(move);
   return &memo->table[encoded];
 }
@@ -136,15 +136,12 @@ void find_count(Ctx *memo) {
   bool p1 = true;
   while (true) {
     char p = p1 ? 'A' : 'B';
-    printf("%c ", p);
-
-    printf("[%d]", next->take1);
+    printf("%c [%d]", p, next->take1);
     if (next->take2 >= 0) {
       printf(", [%d]", next->take2);
     }
-    printf(": ");
 
-    printf("%d", coins[(int)next->take1]);
+    printf(": %d", coins[(int)next->take1]);
     if (next->take2 >= 0) {
       printf(" + %d", coins[(int)next->take2]);
     }
