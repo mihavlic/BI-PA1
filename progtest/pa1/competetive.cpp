@@ -195,51 +195,40 @@ Result field_parse_line(Field *field, char *line) {
   return RESULT_OK;
 }
 
-void format_append(char *buffer, int maxlen, int *cursor, const char *format,
-                   ...) {
-  int remaining = maxlen - *cursor;
-  // 1 because the last byte in the buffer will be null anyway
-  if (remaining <= 1) {
-    return;
-  }
-
-  va_list va_args;
-  va_start(va_args, format);
-  int n = vsnprintf(buffer + *cursor, remaining, format, va_args);
-  if (n > 0) {
-    *cursor += n;
-  }
-}
-
 void field_debug(Field *field) {
   assert(field->width > 0);
   for (int y = 0; y < field->height; y++) {
     for (int x = 0; x < field->width; x++) {
-      Cell *cell = field_get(field, x, y);
-      char buffer[16] = {};
-      int cursor = 0;
+      const Cell *cell = field_get(field, x, y);
+      int c = 0;
 
-      if (cell->sum_down == -1) {
-        snprintf(buffer, 16, ".");
-      } else if (cell->sum_down == 0 && cell->sum_right == 0) {
-        snprintf(buffer, 16, "X");
-      } else {
-        if (cell->sum_down == 0) {
-          format_append(buffer, 16, &cursor, "X");
-        } else {
-          format_append(buffer, 16, &cursor, "%d", cell->sum_down);
-        }
-        format_append(buffer, 16, &cursor, "\\");
-        if (cell->sum_right == 0) {
-          format_append(buffer, 16, &cursor, "X");
-        } else {
-          format_append(buffer, 16, &cursor, "%d", cell->sum_right);
-        }
-      }
       if (x != 0) {
         printf(" ");
       }
-      printf("%-5s", buffer);
+
+      if (cell->sum_down == CELL_EMPTY_VALUE) {
+        c += printf(".");
+      } else if (cell->sum_down == CELL_X_VALUE &&
+                 cell->sum_right == CELL_X_VALUE) {
+        c += printf("X");
+      } else {
+        if (cell->sum_down == CELL_X_VALUE) {
+          c += printf("X");
+        } else {
+          c += printf("%d", cell->sum_down);
+        }
+        c += printf("\\");
+        if (cell->sum_right == CELL_X_VALUE) {
+          c += printf("X");
+        } else {
+          c += printf("%d", cell->sum_right);
+        }
+      }
+
+      // manually pad to 5
+      for (; c < 5; c++) {
+        printf(" ");
+      }
     }
     printf("\n");
   }
