@@ -2,6 +2,7 @@
 #include <cctype>
 #include <cstdarg>
 #include <cstddef>
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -65,24 +66,134 @@ void debug_breakpoint_hook() { return; }
     };                                                                         \
   }
 
-typedef struct {
+typedef int GroupIndex;
+
+enum CellKind {
+  KIND_EMPTY,  // .
+  KIND_HEADER, // 12/X
+  KIND_NUMBER  // 1-9
+};
+
+struct CellHeader {
   char sum_down;
   char sum_right;
+};
+
+struct CellBlank {
+  GroupIndex group_down;
+  GroupIndex group_right;
+};
+
+typedef struct {
+  CellKind kind;
+  union {
+    CellHeader header;
+    CellBlank blank;
+    int cell_number;
+  } data;
 } Cell;
 
-// special sum values:
-//  X  CELL_X_VALUE
-//  .  CELL_EMPTY_VALUE
-constexpr char CELL_X_VALUE = 0;
-constexpr char CELL_EMPTY_VALUE = -1;
-constexpr Cell CELL_X = Cell{CELL_X_VALUE, CELL_X_VALUE};
-constexpr Cell CELL_EMPTY = Cell{CELL_EMPTY_VALUE, CELL_EMPTY_VALUE};
+typedef uint16_t Bitset;
+bool bitset_get(Bitset bitset, int i) {
+  Bitset mask = 1 << i;
+  return (bitset & mask) == mask;
+}
 
+bool bitset_contains(Bitset bitset, Bitset other) {
+  return (bitset & other) == other;
+}
+
+Bitset bitset_subtract(Bitset bitset, Bitset other) { return bitset & ~other; }
+
+void bitset_set(Bitset *bitset, int i) { *bitset |= 1 << i; }
+
+void bitset_remove(Bitset *bitset, int i) { *bitset &= ~(1 << i); }
+
+int bitset_digit_sum(Bitset bitset) {
+  int sum = 0;
+  for (int i = 1; i < 10; i++) {
+    if (bitset_get(bitset, i)) {
+      sum += i;
+    }
+  }
+  return sum;
+}
+
+int bitset_popcount(Bitset bitset) { return __builtin_popcount(bitset); }
+
+typedef struct {
+  Bitset present_values;
+  int cell_count;
+  int target_sum;
+} Group;
+
+typedef struct {
+  int start_offset;
+  int end_offset;
+} TableHeader;
+
+typedef struct {
+  Bitset *start;
+  Bitset *end;
+} TableRow;
+
+constexpr int SUM_TABLE_SIZE = 45 * 9 + 8 + 1;
 typedef struct {
   int width;
   int height;
   ArrayList values;
+  ArrayList groups;
+  TableHeader sum_table[SUM_TABLE_SIZE];
+  Bitset *table_storage;
 } Field;
+
+int encode_table_sum(int target_sum, int cell_count) {
+  assert(0 < target_sum && target_sum <= 45);
+  assert(0 < cell_count && cell_count <= 9);
+  return target_sum * 9 + cell_count - 1;
+}
+
+void field_populate_table(Field *field) {
+  int entry_counts[SUM_TABLE_SIZE] = {};
+  // generate permutations of bits 1-9 and count how many entries each
+  // combination has 00xx xxxx xxx0
+  for (Bitset mask = 2; mask <= 1022; mask += 2) {
+    int sum = bitset_digit_sum(mask);
+    int count = bitset_popcount(mask);
+
+    int offset = encode_table_sum(sum, count);
+    entry_counts[offset] += 1;
+  }
+
+  int start = 0;
+  for (int i = 0; i < SUM_TABLE_SIZE; i++) {
+    // TableHeader.end_offset will be increased when filling the table entries
+    // in the next loop
+    field->sum_table[i] = TableHeader{start, start};
+    start += entry_counts[i];
+  }
+
+  Bitset *storage = (Bitset *)malloc(start * sizeof(Bitset));
+  for (Bitset mask = 2; mask <= 1022; mask += 2) {
+    int sum = bitset_digit_sum(mask);
+    int count = bitset_popcount(mask);
+
+    int offset = encode_table_sum(sum, count);
+    int entry_offset = field->sum_table[offset].end_offset++;
+    storage[entry_offset] = mask;
+  }
+
+  field->table_storage = storage;
+}
+
+TableRow field_table_get(Field *field, int target_sum, int cell_count) {
+  int offset = encode_table_sum(target_sum, cell_count);
+  TableHeader header = field->sum_table[offset];
+  return TableRow{
+      field->table_storage + header.start_offset,
+      field->table_storage + header.end_offset,
+  };
+}
 
 Cell *field_get(Field *field, int x, int y) {
   assert(x < field->width);
@@ -91,7 +202,11 @@ Cell *field_get(Field *field, int x, int y) {
   return ((Cell *)field->values.allocation) + index;
 }
 
-void field_free(Field *field) { list_free(&field->values); }
+void field_free(Field *field) {
+  list_free(&field->values);
+  list_free(&field->groups);
+  free(field->table_storage);
+}
 
 bool consume_with(char **line, int (*fun)(int)) {
   if (fun(**line)) {
@@ -147,12 +262,14 @@ Result parse_cell(Cell *cell, char **line) {
     return RESULT_EMPTY;
   }
   if (consume_single(line, '.')) {
-    *cell = CELL_EMPTY;
+    cell->kind = KIND_EMPTY;
+    cell->data.blank = CellBlank{-1, -1};
     return RESULT_OK;
   }
   if (**line == 'X' && *(*line + 1) != '\\') {
     (*line)++;
-    *cell = CELL_X;
+    cell->kind = KIND_HEADER;
+    cell->data.header = CellHeader{0, 0};
     return RESULT_OK;
   }
   if (**line == 'X' || isdigit(**line)) {
@@ -161,7 +278,8 @@ Result parse_cell(Cell *cell, char **line) {
     TRY(parse_cell_expr(line, &sum1));
     ENSURE(consume_single(line, '\\'));
     TRY(parse_cell_expr(line, &sum2));
-    *cell = Cell{(char)sum1, (char)sum2};
+    cell->kind = KIND_HEADER;
+    cell->data.header = CellHeader{(char)sum1, (char)sum2};
     return RESULT_OK;
   }
   // we haven't matched any valid characters
@@ -195,34 +313,40 @@ Result field_parse_line(Field *field, char *line) {
   return RESULT_OK;
 }
 
-void field_debug(Field *field) {
+void field_print(Field *field) {
   assert(field->width > 0);
   for (int y = 0; y < field->height; y++) {
     for (int x = 0; x < field->width; x++) {
       const Cell *cell = field_get(field, x, y);
-      int c = 0;
 
       if (x != 0) {
         printf(" ");
       }
 
-      if (cell->sum_down == CELL_EMPTY_VALUE) {
+      int c = 0;
+      if (cell->kind == KIND_HEADER) {
+        CellHeader header = cell->data.header;
+        if (header.sum_down == 0 && header.sum_right == 0) {
+          c += printf("X");
+        } else {
+          if (header.sum_down == 0) {
+            c += printf("X");
+          } else {
+            c += printf("%d", header.sum_down);
+          }
+          c += printf("\\");
+          if (header.sum_right == 0) {
+            c += printf("X");
+          } else {
+            c += printf("%d", header.sum_right);
+          }
+        }
+      } else if (cell->kind == KIND_EMPTY) {
         c += printf(".");
-      } else if (cell->sum_down == CELL_X_VALUE &&
-                 cell->sum_right == CELL_X_VALUE) {
-        c += printf("X");
+      } else if (cell->kind == KIND_NUMBER) {
+        c += printf("%d", cell->data.cell_number);
       } else {
-        if (cell->sum_down == CELL_X_VALUE) {
-          c += printf("X");
-        } else {
-          c += printf("%d", cell->sum_down);
-        }
-        c += printf("\\");
-        if (cell->sum_right == CELL_X_VALUE) {
-          c += printf("X");
-        } else {
-          c += printf("%d", cell->sum_right);
-        }
+        assert(false);
       }
 
       // manually pad to 5
@@ -234,9 +358,11 @@ void field_debug(Field *field) {
   }
 }
 
-Result check_cell(int x, int y, int sum_value, int *previous_empty) {
+Result check_cell(int x, int y, Cell *cell, bool is_down, int *previous_empty) {
+  CellKind kind = cell->kind;
+
   // if we're at an empty cell, just add it to the counter
-  if (sum_value == CELL_EMPTY_VALUE) {
+  if (kind == KIND_EMPTY) {
     *previous_empty += 1;
     return RESULT_OK;
   }
@@ -248,18 +374,22 @@ Result check_cell(int x, int y, int sum_value, int *previous_empty) {
     return RESULT_ERR;
   }
 
-  // X\X . . .    there is no sum header for these empties
-  if (sum_value == CELL_X_VALUE && *previous_empty != 0) {
-    DEBUGF("X cell at [%d, %d] has empties\n", x, y);
-    return RESULT_ERR;
-  }
+  if (kind == KIND_HEADER) {
+    CellHeader header = cell->data.header;
+    char sum = is_down ? header.sum_down : header.sum_right;
 
-  // X\2    X     there are no empties for this header
-  if (sum_value != CELL_EMPTY_VALUE && sum_value != CELL_X_VALUE) {
-    if (*previous_empty == 0) {
+    // X\X . . .    there is no sum header for these empties
+    if (sum == 0 && *previous_empty != 0) {
+      DEBUGF("X cell at [%d, %d] has empties\n", x, y);
+      return RESULT_ERR;
+    }
+
+    // X\2    X     there are no empties for this header
+    if (sum != 0 && *previous_empty == 0) {
       DEBUGF("cell at [%d, %d] no empties\n", x, y);
       return RESULT_ERR;
     }
+
     *previous_empty = 0;
   }
 
@@ -267,26 +397,194 @@ Result check_cell(int x, int y, int sum_value, int *previous_empty) {
 }
 
 Result field_validate(Field *field) {
+  Cell black = Cell{KIND_HEADER, {}};
   for (int y = 0; y < field->height; y++) {
     int previous_empty = 0;
     for (int x = field->width - 1; x >= 0; x--) {
       Cell *cell = field_get(field, x, y);
-      TRY(check_cell(x, y, cell->sum_right, &previous_empty));
+      TRY(check_cell(x, y, cell, false, &previous_empty));
     }
-    TRY(check_cell(0, y, 0, &previous_empty));
+    TRY(check_cell(-1, y, &black, false, &previous_empty));
   }
   for (int x = 0; x < field->width; x++) {
     int previous_empty = 0;
     for (int y = field->height - 1; y >= 0; y--) {
       Cell *cell = field_get(field, x, y);
-      TRY(check_cell(x, y, cell->sum_down, &previous_empty));
+      TRY(check_cell(x, y, cell, true, &previous_empty));
     }
-    TRY(check_cell(x, 0, 0, &previous_empty));
+    TRY(check_cell(x, -1, &black, true, &previous_empty));
   }
   return RESULT_OK;
 }
 
+GroupIndex field_add_group(Field *field, int target_sum) {
+  GroupIndex offset = field->groups.size / sizeof(Group);
+  Group group = {};
+  group.target_sum = target_sum;
+  list_push(&field->groups, &group, sizeof(Group));
+  return offset;
+}
+
+Group *field_get_group(Field *field, GroupIndex group) {
+  return (Group *)field->groups.allocation + group;
+}
+
+void add_group(Field *field, GroupIndex *current_group, Cell *cell,
+               bool is_down) {
+  if (cell->kind == KIND_EMPTY) {
+    if (is_down) {
+      cell->data.blank.group_down = *current_group;
+    } else {
+      cell->data.blank.group_right = *current_group;
+    }
+    field_get_group(field, *current_group)->cell_count += 1;
+  } else if (cell->kind == KIND_HEADER) {
+    CellHeader header = cell->data.header;
+    char sum = is_down ? header.sum_down : header.sum_right;
+    if (sum > 0) {
+      *current_group = field_add_group(field, sum);
+    }
+  }
+}
+
+void field_populate_groups(Field *field) {
+  for (int y = 0; y < field->height; y++) {
+    GroupIndex current_group = -1;
+    for (int x = 0; x < field->width; x++) {
+      Cell *cell = field_get(field, x, y);
+      add_group(field, &current_group, cell, false);
+    }
+  }
+  for (int x = 0; x < field->width; x++) {
+    GroupIndex current_group = -1;
+    for (int y = 0; y < field->height; y++) {
+      Cell *cell = field_get(field, x, y);
+      add_group(field, &current_group, cell, true);
+    }
+  }
+}
+
+typedef struct {
+  int *first_solution;
+  int solution_count;
+} KakuroSolution;
+
+typedef struct {
+  Group *group_down;
+  Group *group_right;
+} GroupPair;
+
+Bitset get_available_group_values(Field *field, Group *group) {
+  TableRow header =
+      field_table_get(field, group->target_sum, group->cell_count);
+
+  Bitset result = 0;
+  for (Bitset *set = header.start; set < header.end; set++) {
+    // all full bitsets must be a subset of the already chosen values
+    if (bitset_contains(*set, group->present_values)) {
+      result |= *set;
+    }
+  }
+
+  // can only choose values not already present
+  return bitset_subtract(result, group->present_values);
+}
+
+Bitset get_available_cell_values(Field *field, GroupPair *pair) {
+  Bitset down = get_available_group_values(field, pair->group_down);
+  Bitset right = get_available_group_values(field, pair->group_right);
+  return down & right;
+}
+
+// the domain pruning approached taken from
+// https://github.com/zvrba/yass/blob/master/kakuro.cc
+void backtracking_search(Field *field, GroupPair *cells, int *cells_out,
+                         int cells_len, KakuroSolution *out_solution,
+                         int offset) {
+
+  // all variables have been assigned, a solution is found
+  if (offset == cells_len) {
+    if (out_solution->solution_count == 0) {
+      int size = cells_len * sizeof(int);
+      int *solution = (int *)malloc(size);
+      memcpy(solution, cells_out, size);
+      out_solution->first_solution = solution;
+    }
+    out_solution->solution_count += 1;
+    return;
+  }
+
+  GroupPair *cell = cells + offset;
+  int *cell_value = cells_out + offset;
+  Bitset available = get_available_cell_values(field, cell);
+
+  if (available == 0) {
+    return;
+  }
+
+  for (unsigned i = 1; i < 10; i++) {
+    if (bitset_get(available, i)) {
+      *cell_value = i;
+      bitset_set(&cell->group_down->present_values, i);
+      bitset_set(&cell->group_right->present_values, i);
+      backtracking_search(field, cells, cells_out, cells_len, out_solution,
+                          offset + 1);
+      bitset_remove(&cell->group_down->present_values, i);
+      bitset_remove(&cell->group_right->present_values, i);
+      *cell_value = 0;
+    }
+  }
+}
+
+KakuroSolution field_find_solutions(Field *field) {
+  // the backtracking search is the most time consuming part of this
+  // so we put all the blank cells/variables into a compact array
+  ArrayList cells = {};
+  for (int y = 0; y < field->height; y++) {
+    for (int x = 0; x < field->width; x++) {
+      Cell *cell = field_get(field, x, y);
+      if (cell->kind == KIND_EMPTY) {
+        CellBlank blank = cell->data.blank;
+        assert(blank.group_down >= 0);
+        assert(blank.group_right >= 0);
+        GroupPair pair = GroupPair{field_get_group(field, blank.group_down),
+                                   field_get_group(field, blank.group_right)};
+        list_push(&cells, &pair, sizeof(GroupPair));
+      }
+    }
+  }
+
+  KakuroSolution solution = KakuroSolution{0, 0};
+  {
+    GroupPair *pairs = (GroupPair *)cells.allocation;
+    int len = cells.size / sizeof(GroupPair);
+    int *values = (int *)calloc(len, sizeof(int));
+
+    backtracking_search(field, pairs, values, len, &solution, 0);
+
+    free(values);
+    list_free(&cells);
+  }
+
+  int offset = 0;
+  if (solution.first_solution) {
+    for (int y = 0; y < field->height; y++) {
+      for (int x = 0; x < field->width; x++) {
+        Cell *cell = field_get(field, x, y);
+        if (cell->kind == KIND_EMPTY) {
+          cell->kind = KIND_NUMBER;
+          cell->data.cell_number = solution.first_solution[offset++];
+        }
+      }
+    }
+  }
+
+  return solution;
+}
+
 Result run(Field *field, char **line_buf, size_t *line_len) {
+  printf("Zadejte kakuro:\n");
+
   while (getline(line_buf, line_len, stdin) > 0) {
     TRY(field_parse_line(field, *line_buf));
   }
@@ -296,9 +594,22 @@ Result run(Field *field, char **line_buf, size_t *line_len) {
     return RESULT_ERR;
   }
 
-  field_debug(field);
   TRY(field_validate(field));
 
+  field_populate_groups(field);
+  field_populate_table(field);
+  KakuroSolution solution = field_find_solutions(field);
+
+  if (solution.solution_count == 0) {
+    printf("Reseni neexistuje.\n");
+  } else if (solution.solution_count == 1) {
+    printf("Kakuro ma jedno reseni:\n");
+    field_print(field);
+  } else if (solution.solution_count > 1) {
+    printf("Celkem ruznych reseni: %d\n", solution.solution_count);
+  }
+
+  free(solution.first_solution);
   return RESULT_OK;
 }
 
@@ -310,7 +621,7 @@ int main() {
 
   Result result = run(&field, &line_buf, &line_len);
   if (result != RESULT_OK) {
-    printf("Nespravny vstup.");
+    printf("Nespravny vstup.\n");
   }
 
   field_free(&field);
