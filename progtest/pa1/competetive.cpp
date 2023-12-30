@@ -94,20 +94,22 @@ typedef struct {
 } Cell;
 
 typedef uint16_t Bitset;
-bool bitset_get(Bitset bitset, int i) {
+inline bool bitset_get(Bitset bitset, int i) {
   Bitset mask = 1 << i;
   return (bitset & mask) == mask;
 }
 
-bool bitset_contains(Bitset bitset, Bitset other) {
+inline bool bitset_contains(Bitset bitset, Bitset other) {
   return (bitset & other) == other;
 }
 
-Bitset bitset_subtract(Bitset bitset, Bitset other) { return bitset & ~other; }
+inline Bitset bitset_subtract(Bitset bitset, Bitset other) {
+  return bitset & ~other;
+}
 
-void bitset_set(Bitset *bitset, int i) { *bitset |= 1 << i; }
+inline void bitset_set(Bitset *bitset, int i) { *bitset |= 1 << i; }
 
-void bitset_remove(Bitset *bitset, int i) { *bitset &= ~(1 << i); }
+inline void bitset_remove(Bitset *bitset, int i) { *bitset &= ~(1 << i); }
 
 int bitset_digit_sum(Bitset bitset) {
   int sum = 0;
@@ -119,7 +121,7 @@ int bitset_digit_sum(Bitset bitset) {
   return sum;
 }
 
-int bitset_popcount(Bitset bitset) { return __builtin_popcount(bitset); }
+inline int bitset_popcount(Bitset bitset) { return __builtin_popcount(bitset); }
 
 typedef struct {
   Bitset present_values;
@@ -472,14 +474,13 @@ typedef struct {
 typedef struct {
   Group *group_down;
   Group *group_right;
+  TableRow row_down;
+  TableRow row_right;
 } GroupPair;
 
-Bitset get_available_group_values(Field *field, Group *group) {
-  TableRow header =
-      field_table_get(field, group->target_sum, group->cell_count);
-
+inline Bitset get_available_group_values(Group *group, TableRow row) {
   Bitset result = 0;
-  for (Bitset *set = header.start; set < header.end; set++) {
+  for (Bitset *set = row.start; set < row.end; set++) {
     // all full bitsets must be a subset of the already chosen values
     if (bitset_contains(*set, group->present_values)) {
       result |= *set;
@@ -490,11 +491,14 @@ Bitset get_available_group_values(Field *field, Group *group) {
   return bitset_subtract(result, group->present_values);
 }
 
-Bitset get_available_cell_values(Field *field, GroupPair *pair) {
-  Bitset down = get_available_group_values(field, pair->group_down);
-  Bitset right = get_available_group_values(field, pair->group_right);
+inline Bitset get_available_cell_values(GroupPair *pair) {
+  Bitset down = get_available_group_values(pair->group_down, pair->row_down);
+  Bitset right = get_available_group_values(pair->group_right, pair->row_right);
   return down & right;
 }
+
+#define likely(x) __builtin_expect(!!(x), 1)
+#define unlikely(x) __builtin_expect(!!(x), 0)
 
 // the domain pruning approached taken from
 // https://github.com/zvrba/yass/blob/master/kakuro.cc
@@ -503,8 +507,8 @@ void backtracking_search(Field *field, GroupPair *cells, int *cells_out,
                          int offset) {
 
   // all variables have been assigned, a solution is found
-  if (offset == cells_len) {
-    if (out_solution->solution_count == 0) {
+  if (unlikely(offset == cells_len)) {
+    if (unlikely(out_solution->solution_count == 0)) {
       int size = cells_len * sizeof(int);
       int *solution = (int *)malloc(size);
       memcpy(solution, cells_out, size);
@@ -516,7 +520,7 @@ void backtracking_search(Field *field, GroupPair *cells, int *cells_out,
 
   GroupPair *cell = cells + offset;
   int *cell_value = cells_out + offset;
-  Bitset available = get_available_cell_values(field, cell);
+  Bitset available = get_available_cell_values(cell);
 
   if (available == 0) {
     return;
@@ -531,7 +535,6 @@ void backtracking_search(Field *field, GroupPair *cells, int *cells_out,
                           offset + 1);
       bitset_remove(&cell->group_down->present_values, i);
       bitset_remove(&cell->group_right->present_values, i);
-      *cell_value = 0;
     }
   }
 }
@@ -547,8 +550,18 @@ KakuroSolution field_find_solutions(Field *field) {
         CellBlank blank = cell->data.blank;
         assert(blank.group_down >= 0);
         assert(blank.group_right >= 0);
-        GroupPair pair = GroupPair{field_get_group(field, blank.group_down),
-                                   field_get_group(field, blank.group_right)};
+
+        Group *group_down = field_get_group(field, blank.group_down);
+        Group *group_right = field_get_group(field, blank.group_right);
+
+        GroupPair pair = GroupPair{
+            group_down,
+            group_right,
+            field_table_get(field, group_down->target_sum,
+                            group_down->cell_count),
+            field_table_get(field, group_right->target_sum,
+                            group_right->cell_count),
+        };
         list_push(&cells, &pair, sizeof(GroupPair));
       }
     }
