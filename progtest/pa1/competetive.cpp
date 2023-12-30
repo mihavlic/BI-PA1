@@ -75,8 +75,8 @@ enum CellKind {
 };
 
 struct CellHeader {
-  char sum_down;
-  char sum_right;
+  int sum_down;
+  int sum_right;
 };
 
 struct CellBlank {
@@ -106,10 +106,6 @@ inline bool bitset_contains(Bitset bitset, Bitset other) {
 inline Bitset bitset_subtract(Bitset bitset, Bitset other) {
   return bitset & ~other;
 }
-
-inline void bitset_set(Bitset *bitset, int i) { *bitset |= 1 << i; }
-
-inline void bitset_remove(Bitset *bitset, int i) { *bitset &= ~(1 << i); }
 
 int bitset_digit_sum(Bitset bitset) {
   int sum = 0;
@@ -281,7 +277,7 @@ Result parse_cell(Cell *cell, char **line) {
     ENSURE(consume_single(line, '\\'));
     TRY(parse_cell_expr(line, &sum2));
     cell->kind = KIND_HEADER;
-    cell->data.header = CellHeader{(char)sum1, (char)sum2};
+    cell->data.header = CellHeader{sum1, sum2};
     return RESULT_OK;
   }
   // we haven't matched any valid characters
@@ -315,44 +311,50 @@ Result field_parse_line(Field *field, char *line) {
   return RESULT_OK;
 }
 
+int print_cell(const Cell *cell) {
+  int c = 0;
+  if (cell->kind == KIND_HEADER) {
+    CellHeader header = cell->data.header;
+    if (header.sum_down == 0 && header.sum_right == 0) {
+      c += printf("X");
+    } else {
+      if (header.sum_down == 0) {
+        c += printf("X");
+      } else {
+        c += printf("%d", header.sum_down);
+      }
+      c += printf("\\");
+      if (header.sum_right == 0) {
+        c += printf("X");
+      } else {
+        c += printf("%d", header.sum_right);
+      }
+    }
+  }
+  if (cell->kind == KIND_EMPTY) {
+    c += printf(".");
+  }
+  if (cell->kind == KIND_NUMBER) {
+    c += printf("%d", cell->data.cell_number);
+  }
+
+  assert(c > 0);
+  return c;
+}
+
 void field_print(Field *field) {
   assert(field->width > 0);
   for (int y = 0; y < field->height; y++) {
     for (int x = 0; x < field->width; x++) {
-      const Cell *cell = field_get(field, x, y);
-
       if (x != 0) {
         printf(" ");
       }
 
-      int c = 0;
-      if (cell->kind == KIND_HEADER) {
-        CellHeader header = cell->data.header;
-        if (header.sum_down == 0 && header.sum_right == 0) {
-          c += printf("X");
-        } else {
-          if (header.sum_down == 0) {
-            c += printf("X");
-          } else {
-            c += printf("%d", header.sum_down);
-          }
-          c += printf("\\");
-          if (header.sum_right == 0) {
-            c += printf("X");
-          } else {
-            c += printf("%d", header.sum_right);
-          }
-        }
-      } else if (cell->kind == KIND_EMPTY) {
-        c += printf(".");
-      } else if (cell->kind == KIND_NUMBER) {
-        c += printf("%d", cell->data.cell_number);
-      } else {
-        assert(false);
-      }
+      const Cell *cell = field_get(field, x, y);
+      int written = print_cell(cell);
 
       // manually pad to 5
-      for (; c < 5; c++) {
+      for (; written < 5; written++) {
         printf(" ");
       }
     }
@@ -376,25 +378,22 @@ Result check_cell(int x, int y, Cell *cell, bool is_down, int *previous_empty) {
     return RESULT_ERR;
   }
 
-  if (kind == KIND_HEADER) {
-    CellHeader header = cell->data.header;
-    char sum = is_down ? header.sum_down : header.sum_right;
+  CellHeader header = cell->data.header;
+  char sum = is_down ? header.sum_down : header.sum_right;
 
-    // X\X . . .    there is no sum header for these empties
-    if (sum == 0 && *previous_empty != 0) {
-      DEBUGF("X cell at [%d, %d] has empties\n", x, y);
-      return RESULT_ERR;
-    }
-
-    // X\2    X     there are no empties for this header
-    if (sum != 0 && *previous_empty == 0) {
-      DEBUGF("cell at [%d, %d] no empties\n", x, y);
-      return RESULT_ERR;
-    }
-
-    *previous_empty = 0;
+  // X\X . . .    there is no sum header for these empties
+  if (sum == 0 && *previous_empty != 0) {
+    DEBUGF("X cell at [%d, %d] has empties\n", x, y);
+    return RESULT_ERR;
   }
 
+  // X\2    X     there are no empties for this header
+  if (sum != 0 && *previous_empty == 0) {
+    DEBUGF("cell at [%d, %d] no empties\n", x, y);
+    return RESULT_ERR;
+  }
+
+  *previous_empty = 0;
   return RESULT_OK;
 }
 
@@ -527,14 +526,19 @@ void backtracking_search(Field *field, GroupPair *cells, int *cells_out,
   }
 
   for (unsigned i = 1; i < 10; i++) {
-    if (bitset_get(available, i)) {
+    int mask = 1 << i;
+    if ((available & mask) == mask) {
       *cell_value = i;
-      bitset_set(&cell->group_down->present_values, i);
-      bitset_set(&cell->group_right->present_values, i);
+
+      Bitset *down = &cell->group_down->present_values;
+      Bitset *right = &cell->group_right->present_values;
+
+      *down |= mask;
+      *right |= mask;
       backtracking_search(field, cells, cells_out, cells_len, out_solution,
                           offset + 1);
-      bitset_remove(&cell->group_down->present_values, i);
-      bitset_remove(&cell->group_right->present_values, i);
+      *down &= ~mask;
+      *right &= ~mask;
     }
   }
 }
@@ -602,12 +606,9 @@ Result run(Field *field, char **line_buf, size_t *line_len) {
     TRY(field_parse_line(field, *line_buf));
   }
 
-  if ((1 > field->width || field->width > 32) ||
-      (1 > field->height || field->height > 32)) {
-    return RESULT_ERR;
-  }
-
-  TRY(field_validate(field));
+  ENSURE((1 <= field->width && field->width <= 32) &&
+         (1 <= field->height && field->height <= 32) &&
+         field_validate(field) == RESULT_OK);
 
   field_populate_groups(field);
   field_populate_table(field);
