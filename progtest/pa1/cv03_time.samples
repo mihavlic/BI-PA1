@@ -1,0 +1,97 @@
+---
+CZE_0000 in
+---
+11:45:20,456
+12:07:54,349
+---
+CZE_0000 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Doba:  0:22:33,893
+---
+CZE_0001 in
+---
+15:18:34,232
+15:18:34,293
+---
+CZE_0001 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Doba:  0:00:00,061
+---
+CZE_0002 in
+---
+12:00:00,000
+12:00:00,000
+---
+CZE_0002 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Doba:  0:00:00,000
+---
+CZE_0003 in
+---
+01:01:01,001
+07:07:07,007
+---
+CZE_0003 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Doba:  6:06:06,006
+---
+CZE_0004 in
+---
+ 1 : 1 : 1 , 001
+ 7 : 7 : 7 , 007
+---
+CZE_0004 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Doba:  6:06:06,006
+---
+CZE_0005 in
+---
+1:1:1,001
+17:7:7,007
+---
+CZE_0005 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Doba: 16:06:06,006
+---
+CZE_0006 in
+---
+12:30:00,000
+12:00:00,000
+---
+CZE_0006 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Nespravny vstup.
+---
+CZE_0007 in
+---
+15:30:34,123
+15:60:34,123
+---
+CZE_0007 out
+---
+Zadejte cas t1:
+Zadejte cas t2:
+Nespravny vstup.
+---
+CZE_0008 in
+---
+15:40:21.745
+---
+CZE_0008 out
+---
+Zadejte cas t1:
+Nespravny vstup.

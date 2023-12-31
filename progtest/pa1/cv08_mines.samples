@@ -1,0 +1,56 @@
+---
+CZE_0000 in
+---
+.....*....
+..*..*....
+.....*..*.
+..*.......
+---
+CZE_0000 out
+---
+Zadejte hraci plochu:
+Vyplnena hraci plocha:
+.1112*2...
+.1*13*3111
+.2222*21*1
+.1*1111111
+---
+CZE_0001 in
+---
+.....*....
+..****....
+..*..*..*.
+..***..*.*
+..*.***...
+..***.*...
+---
+CZE_0001 out
+---
+Zadejte hraci plochu:
+Vyplnena hraci plocha:
+.1234*2...
+.2****3111
+.3*76*32*2
+.3***54*3*
+.3*8***321
+.2***5*2..
+---
+CZE_0002 in
+---
+.....*....
+..**A.*...
+---
+CZE_0002 out
+---
+Zadejte hraci plochu:
+Nespravny vstup.
+---
+CZE_0003 in
+---
+.....*....
+..**.*...
+---
+CZE_0003 out
+---
+Zadejte hraci plochu:
+Nespravny vstup.

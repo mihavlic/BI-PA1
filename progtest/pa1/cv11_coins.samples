@@ -1,0 +1,80 @@
+---
+CZE_0000 in
+---
+1 2 5 10 20 50 5000 2000 1000 500 200 100 0
+1 2 3 4 5 6 7 8 9 10
+---
+CZE_0000 out
+---
+Mince:
+Castky:
+= 1
+= 1
+= 2
+= 2
+= 1
+= 2
+= 2
+= 3
+= 3
+= 1
+---
+CZE_0001 in
+---
+2 3 0
+1
+2
+3
+4
+5
+---
+CZE_0001 out
+---
+Mince:
+Castky:
+= nema reseni
+= 1
+= 1
+= 2
+= 2
+---
+CZE_0002 in
+---
+1 23 25 0
+47
+48
+92
+94
+95
+---
+CZE_0002 out
+---
+Mince:
+Castky:
+= 3
+= 2
+= 4
+= 4
+= 5
+---
+CZE_0003 in
+---
+-1 2 3 0
+---
+CZE_0003 out
+---
+Mince:
+Nespravny vstup.
+---
+CZE_0004 in
+---
+1 2 5 10 0
+5
+abc
+---
+CZE_0004 out
+---
+Mince:
+Castky:
+= 1
+Nespravny vstup.
