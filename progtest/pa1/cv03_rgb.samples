@@ -1,0 +1,72 @@
+---
+CZE_0000 in
+---
+rgb ( 255, 0, 0 )
+---
+CZE_0000 out
+---
+Zadejte barvu v RGB formatu:
+#FF0000
+---
+CZE_0001 in
+---
+    rgb			(  0  ,   255  ,   0   )
+---
+CZE_0001 out
+---
+Zadejte barvu v RGB formatu:
+#00FF00
+---
+CZE_0002 in
+---
+rgb(0,0,255)
+---
+CZE_0002 out
+---
+Zadejte barvu v RGB formatu:
+#0000FF
+---
+CZE_0003 in
+---
+rgb ( 127, 127, 0 )
+---
+CZE_0003 out
+---
+Zadejte barvu v RGB formatu:
+#7F7F00
+---
+CZE_0004 in
+---
+hsl ( 0, 127, 0 )
+---
+CZE_0004 out
+---
+Zadejte barvu v RGB formatu:
+Nespravny vstup.
+---
+CZE_0005 in
+---
+rgb ( 255, 0 )
+---
+CZE_0005 out
+---
+Zadejte barvu v RGB formatu:
+Nespravny vstup.
+---
+CZE_0006 in
+---
+rgb ( 1000, 127, 0 )
+---
+CZE_0006 out
+---
+Zadejte barvu v RGB formatu:
+Nespravny vstup.
+---
+CZE_0007 in
+---
+RGB ( 100, 200, 0 )
+---
+CZE_0007 out
+---
+Zadejte barvu v RGB formatu:
+Nespravny vstup.

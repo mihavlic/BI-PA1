@@ -1,0 +1,63 @@
+---
+CZE_0000 in
+---
+3.5 + 1.5 = 5
+---
+CZE_0000 out
+---
+Zadejte rovnici:
+Rovnice je spravne.
+---
+CZE_0001 in
+---
+3.5 / 1.5 = 2
+---
+CZE_0001 out
+---
+Zadejte rovnici:
+Rovnice je spravne.
+---
+CZE_0002 in
+---
+8 / -1 = -8
+---
+CZE_0002 out
+---
+Zadejte rovnici:
+Rovnice je spravne.
+---
+CZE_0003 in
+---
+1.44 + 12.25 = 13.69
+---
+CZE_0003 out
+---
+Zadejte rovnici:
+Rovnice je spravne.
+---
+CZE_0004 in
+---
+1.44 + 2.55 = 4
+---
+CZE_0004 out
+---
+Zadejte rovnici:
+3.99 != 4
+---
+CZE_0005 in
+---
+abc / 1 = 2
+---
+CZE_0005 out
+---
+Zadejte rovnici:
+Nespravny vstup.
+---
+CZE_0006 in
+---
+4 & 10 = 1
+---
+CZE_0006 out
+---
+Zadejte rovnici:
+Nespravny vstup.

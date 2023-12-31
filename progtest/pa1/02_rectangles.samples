@@ -1,0 +1,125 @@
+---
+CZE_0000 in
+---
+(0,0)
+(20,0)
+(20,50)
+(0,50)
+---
+CZE_0000 out
+---
+Bod #1:
+Bod #2:
+Bod #3:
+Bod #4:
+Body tvori obdelnik.
+---
+CZE_0001 in
+---
+( -10.5 , 15.8 )
+(178.23,15.8)
+( 178.23, -67.2)
+(-10.5, -67.2)
+---
+CZE_0001 out
+---
+Bod #1:
+Bod #2:
+Bod #3:
+Bod #4:
+Body tvori obdelnik.
+---
+CZE_0002 in
+---
+ (0,-4)
+(4, 0)
+(0, 4)
+(-4, 0)
+---
+CZE_0002 out
+---
+Bod #1:
+Bod #2:
+Bod #3:
+Bod #4:
+Body tvori obdelnik.
+---
+CZE_0003 in
+---
+(0, -4)
+(4, 0)
+(0, 4)
+(-6, 0)
+---
+CZE_0003 out
+---
+Bod #1:
+Bod #2:
+Bod #3:
+Bod #4:
+Body netvori obdelnik.
+---
+CZE_0004 in
+---
+(0, 0)
+(20, 0)
+(0, 50)
+(20, 50)
+---
+CZE_0004 out
+---
+Bod #1:
+Bod #2:
+Bod #3:
+Bod #4:
+Body netvori obdelnik.
+---
+CZE_0005 in
+---
+(61494, 576)
+(865814, 31074)
+(804818, 1639714)
+(498, 1609216)
+---
+CZE_0005 out
+---
+Bod #1:
+Bod #2:
+Bod #3:
+Bod #4:
+Body tvori obdelnik.
+---
+CZE_0006 in
+---
+(6149.4, 57.6)
+(86581.4, 3107.4)
+(80481.8, 163971.4)
+(49.8, 160921.6)
+---
+CZE_0006 out
+---
+Bod #1:
+Bod #2:
+Bod #3:
+Bod #4:
+Body tvori obdelnik.
+---
+CZE_0007 in
+---
+(50, 50)
+(35, test)
+---
+CZE_0007 out
+---
+Bod #1:
+Bod #2:
+Nespravny vstup.
+---
+CZE_0008 in
+---
+10,20
+---
+CZE_0008 out
+---
+Bod #1:
+Nespravny vstup.

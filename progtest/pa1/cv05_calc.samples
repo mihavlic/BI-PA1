@@ -1,0 +1,54 @@
+---
+CZE_0000 in
+---
+3.5 + 1.5 =
+---
+CZE_0000 out
+---
+Zadejte vzorec:
+5
+---
+CZE_0001 in
+---
+3.5 / 1.5 =
+---
+CZE_0001 out
+---
+Zadejte vzorec:
+2
+---
+CZE_0002 in
+---
+1000000 * 1.5e+8 =
+---
+CZE_0002 out
+---
+Zadejte vzorec:
+1.5e+14
+---
+CZE_0003 in
+---
+7 / -1 =
+---
+CZE_0003 out
+---
+Zadejte vzorec:
+-7
+---
+CZE_0004 in
+---
+abc / 1 =
+---
+CZE_0004 out
+---
+Zadejte vzorec:
+Nespravny vstup.
+---
+CZE_0005 in
+---
+4 & 10 =
+---
+CZE_0005 out
+---
+Zadejte vzorec:
+Nespravny vstup.
