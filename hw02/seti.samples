@@ -1,0 +1,90 @@
+---
+CZE_0000 in
+---
+ea|babab
+d|abaca
+---
+CZE_0000 out
+---
+Zpravy:
+Synchronizace za: 42
+---
+CZE_0001 in
+---
+acacbbaaa|
+cbbcabcbbaa|
+---
+CZE_0001 out
+---
+Zpravy:
+Synchronizace za: 0
+---
+CZE_0002 in
+---
+|acabbaaa
+|dcbabaaaa
+---
+CZE_0002 out
+---
+Zpravy:
+Synchronizace za: 0
+---
+CZE_0003 in
+---
+acacbbaa|baa
+bcaabaa|baaa
+---
+CZE_0003 out
+---
+Zpravy:
+Synchronizace za: 216
+---
+CZE_0004 in
+---
+cbbcbaa|aaaa
+aadaaaabaaa|abaa
+---
+CZE_0004 out
+---
+Zpravy:
+Nelze dosahnout.
+---
+CZE_0005 in
+---
+dbdccdccbbbbaa|aaaa
+bebbaedbcabbaa|ccbaa
+---
+CZE_0005 out
+---
+Zpravy:
+Synchronizace za: 276
+---
+CZE_0006 in
+---
+jfddiaggfdffaagfacafcfbbbgdcddbfaedfeaacfeadcbabbaaa|hdccdfdbfadcdbbcbbaa
+bhfdigdbggfadfdddacceaedbefeacbacaacbbbaa|cdcgebfichfbgcbjbhdfadgheifheceeehiceeedfbgcgaggfdaadacbdeccbaadbbabaa
+---
+CZE_0006 out
+---
+Zpravy:
+Synchronizace za: 5046543
+---
+CZE_0007 in
+---
+acacbb|aaa
+cbbcabcbbaa
+---
+CZE_0007 out
+---
+Zpravy:
+Nespravny vstup.
+---
+CZE_0008 in
+---
+acacbb|aaa
+cbbc abcb|baa
+---
+CZE_0008 out
+---
+Zpravy:
+Nespravny vstup.

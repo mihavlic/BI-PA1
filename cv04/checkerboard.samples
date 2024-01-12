@@ -1,0 +1,91 @@
+---
+CZE_0000 in
+---
+5
+3
+---
+CZE_0000 out
+---
+Zadejte pocet poli:
+Zadejte velikost pole:
++---------------+
+|   XXX   XXX   |
+|   XXX   XXX   |
+|   XXX   XXX   |
+|XXX   XXX   XXX|
+|XXX   XXX   XXX|
+|XXX   XXX   XXX|
+|   XXX   XXX   |
+|   XXX   XXX   |
+|   XXX   XXX   |
+|XXX   XXX   XXX|
+|XXX   XXX   XXX|
+|XXX   XXX   XXX|
+|   XXX   XXX   |
+|   XXX   XXX   |
+|   XXX   XXX   |
++---------------+
+---
+CZE_0001 in
+---
+8
+4
+---
+CZE_0001 out
+---
+Zadejte pocet poli:
+Zadejte velikost pole:
++--------------------------------+
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|    XXXX    XXXX    XXXX    XXXX|
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
+|XXXX    XXXX    XXXX    XXXX    |
++--------------------------------+
+---
+CZE_0002 in
+---
+2
+0
+---
+CZE_0002 out
+---
+Zadejte pocet poli:
+Zadejte velikost pole:
+Nespravny vstup.
+---
+CZE_0003 in
+---
+asdf
+---
+CZE_0003 out
+---
+Zadejte pocet poli:
+Nespravny vstup.
